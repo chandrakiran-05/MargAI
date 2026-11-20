@@ -51,12 +51,9 @@ fi
 
 # 4. Build & Deploy Relay API to Google Cloud Run (WebSocket Enabled)
 echo "Step 4/5: Building & Deploying margai-relay-api to Cloud Run..."
-gcloud builds submit \
-  --config=services/relay-api/cloudbuild.yaml \
-  --substitutions=_REGION="$REGION",_BUCKET="$EVIDENCE_BUCKET" \
-  . 2>/dev/null || \
+gcloud builds submit --config=cloudbuild-relay.yaml .
 gcloud run deploy margai-relay-api \
-  --source . \
+  --image="gcr.io/${PROJECT_ID}/margai-relay-api" \
   --region="$REGION" \
   --project="$PROJECT_ID" \
   --allow-unauthenticated \
@@ -70,8 +67,9 @@ echo "✅ Relay API Deployed: $RELAY_URL"
 
 # 5. Build & Deploy Cockpit Web App
 echo "Step 5/5: Building & Deploying margai-cockpit-web to Cloud Run..."
+gcloud builds submit --config=cloudbuild-cockpit.yaml .
 gcloud run deploy margai-cockpit-web \
-  --source apps/cockpit-web \
+  --image="gcr.io/${PROJECT_ID}/margai-cockpit-web" \
   --region="$REGION" \
   --project="$PROJECT_ID" \
   --allow-unauthenticated
