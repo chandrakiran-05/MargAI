@@ -38,6 +38,7 @@ export class RoadPerceptionEngine {
     debris: 0.40,
     sharp_curve: 2.0,
     speed_breaker: 0.12,
+    waterlogging: 0.10,
   };
 
   /**

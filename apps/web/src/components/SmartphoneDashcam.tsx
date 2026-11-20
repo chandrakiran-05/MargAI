@@ -462,23 +462,45 @@ export const SmartphoneDashcam: React.FC = () => {
     });
   };
 
-  const triggerAnimalHazard = () => {
-    const animalHz: HazardBox = {
-      hazard_type: 'ANIMAL_COW',
-      bbox: [120, 100, 240, 220],
-      risk_level: 'HIGH',
-      confidence: 0.94,
-      distance_m: 65,
+  const triggerGenericHazard = (type: string, risk: string = 'HIGH', distance: number = 70) => {
+    const hz: HazardBox = {
+      hazard_type: type,
+      bbox: [100, 110, 220, 180],
+      risk_level: risk,
+      confidence: 0.95,
+      distance_m: distance,
     };
-    setActiveHazards([animalHz]);
-    triggerAudioAndHaptic('ANIMAL_COW', 'HIGH');
+    setActiveHazards([hz]);
+    triggerAudioAndHaptic(type, risk);
+
+    const zg = type === 'POTHOLE' ? 2.35 : zAccelG;
+    const curve = type.includes('CURVE') ? 'SHARP_LEFT' : roadCurve;
+
+    // Broadcast over WebSocket to all vehicles on the road (<2ms)
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          speed_kmh: speedKmh,
+          z_accel_g: zg,
+          road_curve: curve,
+          latest_hazards: [hz],
+          hazard_type: type,
+          distance_m: distance,
+        })
+      );
+    }
+
     bcRef.current?.postMessage({
       speed_kmh: speedKmh,
-      z_accel_g: zAccelG,
-      road_curve: roadCurve,
-      hazards: [animalHz],
+      z_accel_g: zg,
+      road_curve: curve,
+      hazards: [hz],
       fps,
     });
+  };
+
+  const triggerAnimalHazard = () => {
+    triggerGenericHazard('ANIMAL_COW', 'HIGH', 65);
   };
 
   // 4. Render Sleek Automotive Augmented Reality HUD Overlay
@@ -780,12 +802,29 @@ export const SmartphoneDashcam: React.FC = () => {
             ))}
           </div>
 
-          {/* Cow / Animal Hazard */}
+          {/* Hazard Broadcast Triggers */}
           <button
-            onClick={triggerAnimalHazard}
-            className="flex items-center gap-1 px-2.5 py-1.5 bg-[#FBBC05]/20 border border-[#FBBC05] text-[#FBBC05] hover:bg-[#FBBC05]/30 rounded-lg text-xs font-bold transition-all active:scale-95"
+            onClick={() => triggerGenericHazard('PEDESTRIAN', 'HIGH', 50)}
+            className="flex items-center gap-1 px-2.5 py-1.5 bg-[#4285F4]/20 border border-[#4285F4] text-[#4285F4] hover:bg-[#4285F4]/30 rounded-lg text-xs font-bold transition-all active:scale-95"
+            title="Broadcast Pedestrian Hazard to all vehicles"
           >
-            🐄 Cow Ahead
+            🚶 Pedestrian
+          </button>
+
+          <button
+            onClick={() => triggerGenericHazard('WATERLOGGING', 'MEDIUM', 90)}
+            className="flex items-center gap-1 px-2.5 py-1.5 bg-cyan-500/20 border border-cyan-500 text-cyan-400 hover:bg-cyan-500/30 rounded-lg text-xs font-bold transition-all active:scale-95"
+            title="Broadcast Flooded Road surface to all vehicles"
+          >
+            🌊 Flood
+          </button>
+
+          <button
+            onClick={() => triggerGenericHazard('ANIMAL_COW', 'HIGH', 65)}
+            className="flex items-center gap-1 px-2.5 py-1.5 bg-[#FBBC05]/20 border border-[#FBBC05] text-[#FBBC05] hover:bg-[#FBBC05]/30 rounded-lg text-xs font-bold transition-all active:scale-95"
+            title="Broadcast Stray Cattle to all vehicles"
+          >
+            🐄 Cow
           </button>
         </div>
         <div className="max-w-4xl mx-auto grid grid-cols-4 gap-2 sm:gap-4 text-center">

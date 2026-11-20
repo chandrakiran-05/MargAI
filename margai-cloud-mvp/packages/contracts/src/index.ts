@@ -13,6 +13,7 @@ export const HazardTypeSchema = z.enum([
   'debris',
   'sharp_curve',
   'speed_breaker',
+  'waterlogging',
 ]);
 export type HazardType = z.infer<typeof HazardTypeSchema>;
 
@@ -134,6 +135,14 @@ export function getStandardLocalizedPhrases(
         ta: 'முன்னே கூர்மையான வளைவு உள்ளது. வேகம் குறைக்கவும்.',
         te: 'ముందు పదునైన మలుపు ఉంది. వేగం తగ్గించండి.',
         kn: 'ಮುಂದೆ ತೀಕ್ಷ್ಣ ತಿರುವು ಇದೆ. ನಿಧಾನವಾಗಿ ಚಲಿಸಿ.',
+      };
+    case 'waterlogging':
+      return {
+        en: 'Flooded road ahead! Reduce speed to prevent hydroplaning.',
+        hi: 'आगे सड़क पर जलभराव है! फिसलने से बचने के लिए गति धीमी करें।',
+        ta: 'முன்னே சாலையில் வெள்ள நீர் தேங்கியுள்ளது! வேகம் குறைக்கவும்.',
+        te: 'ముందు రోడ్డుపై నీరు నిలిచింది! జాగ్రత్తగా వేగం తగ్గించండి.',
+        kn: 'ಮುಂದೆ ರಸ್ತೆಯಲ್ಲಿ ನೀರು ನಿಂತಿದೆ! ಜಾರುವುದನ್ನು ತಪ್ಪಿಸಲು ನಿಧಾನವಾಗಿ ಚಲಿಸಿ.',
       };
     case 'accident':
       return {

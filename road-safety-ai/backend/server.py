@@ -281,22 +281,32 @@ async def websocket_telemetry_hub(websocket: WebSocket):
                 now = time.time()
                 latest_smartphone_state["connected"] = True
                 latest_smartphone_state["last_frame_timestamp"] = now
-                if "speed_kmh" in data and data["speed_kmh"] is not None:
-                    if "telemetry" not in latest_smartphone_state:
-                        latest_smartphone_state["telemetry"] = {}
-                    latest_smartphone_state["telemetry"]["speed_kmh"] = data["speed_kmh"]
-                if "z_accel_g" in data and data["z_accel_g"] is not None:
-                    if "telemetry" not in latest_smartphone_state:
-                        latest_smartphone_state["telemetry"] = {}
-                    latest_smartphone_state["telemetry"]["z_accel_g"] = data["z_accel_g"]
-                if "road_curve" in data and data["road_curve"] is not None:
-                    if "telemetry" not in latest_smartphone_state:
-                        latest_smartphone_state["telemetry"] = {}
+
+                # Telemetry sync (supports both flat and nested telemetry object)
+                if "telemetry" not in latest_smartphone_state or not isinstance(latest_smartphone_state["telemetry"], dict):
+                    latest_smartphone_state["telemetry"] = {"speed_kmh": 0, "z_accel_g": 1.0, "road_geometry": {"curve_type": "STRAIGHT"}}
+
+                tel_in = data.get("telemetry") if isinstance(data.get("telemetry"), dict) else data
+                if "speed_kmh" in tel_in and tel_in["speed_kmh"] is not None:
+                    latest_smartphone_state["telemetry"]["speed_kmh"] = tel_in["speed_kmh"]
+                if "z_accel_g" in tel_in and tel_in["z_accel_g"] is not None:
+                    latest_smartphone_state["telemetry"]["z_accel_g"] = tel_in["z_accel_g"]
+                if "road_curve" in tel_in and tel_in["road_curve"] is not None:
                     if "road_geometry" not in latest_smartphone_state["telemetry"]:
                         latest_smartphone_state["telemetry"]["road_geometry"] = {}
-                    latest_smartphone_state["telemetry"]["road_geometry"]["curve_type"] = data["road_curve"]
+                    latest_smartphone_state["telemetry"]["road_geometry"]["curve_type"] = tel_in["road_curve"]
+                elif "road_geometry" in tel_in and isinstance(tel_in["road_geometry"], dict):
+                    latest_smartphone_state["telemetry"]["road_geometry"] = tel_in["road_geometry"]
+
+                # Hazards sync (Potholes, Pedestrians, Waterlogging, Curves, Cattle)
+                incoming_hazards = data.get("latest_hazards") or data.get("hazards")
+                if incoming_hazards is not None:
+                    latest_smartphone_state["hazards"] = incoming_hazards
+
                 if "frame_base64" in data and data["frame_base64"]:
                     latest_smartphone_state["latest_frame_b64"] = data["frame_base64"]
+                elif "camera_b64" in data and data["camera_b64"]:
+                    latest_smartphone_state["latest_frame_b64"] = data["camera_b64"]
 
                 await broadcast_telemetry({
                     "type": "telemetry_update",
@@ -304,7 +314,7 @@ async def websocket_telemetry_hub(websocket: WebSocket):
                     "fps": latest_smartphone_state["fps"],
                     "telemetry": latest_smartphone_state["telemetry"],
                     "latest_hazards": latest_smartphone_state["hazards"],
-                    "frame_base64": data.get("frame_base64") or latest_smartphone_state["latest_frame_b64"]
+                    "frame_base64": latest_smartphone_state["latest_frame_b64"]
                 }, sender=websocket)
             except Exception:
                 pass

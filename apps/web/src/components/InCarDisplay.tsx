@@ -33,6 +33,8 @@ interface LanguageCatalog {
       curve: string;
       fog: string;
       side: string;
+      animal: string;
+      waterlogging: string;
     };
   };
 }
@@ -46,6 +48,8 @@ const LOCALIZED_CATALOG: LanguageCatalog = {
       curve: 'Sharp curve ahead.',
       fog: 'Low visibility. Drive slowly.',
       side: 'Person at roadside.',
+      animal: 'Stray cattle crossing ahead. Brake gently.',
+      waterlogging: 'Flooded road ahead. Reduce speed and test brakes.',
     },
   },
   hi: {
@@ -56,6 +60,8 @@ const LOCALIZED_CATALOG: LanguageCatalog = {
       curve: 'आगे तीखा मोड़ है।',
       fog: 'कम दृश्यता है। धीरे चलें।',
       side: 'सड़क किनारे व्यक्ति खड़ा है।',
+      animal: 'आगे सड़क पर पशु हैं। सावधानी से ब्रेक लगाएं।',
+      waterlogging: 'आगे सड़क पर जलभराव है। गति धीमी करें।',
     },
   },
   ta: {
@@ -66,6 +72,8 @@ const LOCALIZED_CATALOG: LanguageCatalog = {
       curve: 'முன்னே கூர்மையான வளைவு உள்ளது.',
       fog: 'பார்வைத் தெளிவு குறைவு. மெதுவாகச் செல்லுங்கள்.',
       side: 'சாலையோரத்தில் ஒருவர் நிற்கிறார்.',
+      animal: 'முன்னே கால்நடைகள் சாலையைக் கடக்கின்றன. கவனம்.',
+      waterlogging: 'முன்னே சாலையில் நீர் தேங்கியுள்ளது. கவனம்.',
     },
   },
   te: {
@@ -76,6 +84,8 @@ const LOCALIZED_CATALOG: LanguageCatalog = {
       curve: 'ముందు పదునైన మలుపు ఉంది.',
       fog: 'కనిపించే దూరం తక్కువగా ఉంది. నెమ్మదిగా వెళ్లండి.',
       side: 'రోడ్డు పక్కన వ్యక్తి ఉన్నారు.',
+      animal: 'ముందు పశువులు రోడ్డు దాటుతున్నాయి. నెమ్మదిగా వెళ్లండి.',
+      waterlogging: 'ముందు రోడ్డుపై నీరు నిలిచింది. నెమ్మదిగా వెళ్లండి.',
     },
   },
   kn: {
@@ -86,6 +96,8 @@ const LOCALIZED_CATALOG: LanguageCatalog = {
       curve: 'ಮುಂದೆ ತೀಕ್ಷ್ಣ ತಿರುವು ಇದೆ.',
       fog: 'ಗೋಚರತೆ ಕಡಿಮೆ ಇದೆ. ನಿಧಾನವಾಗಿ ಚಲಿಸಿ.',
       side: 'ರಸ್ತೆ ಬದಿಯಲ್ಲಿ ವ್ಯಕ್ತಿ ಇದ್ದಾರೆ.',
+      animal: 'ಮುಂದೆ ದನ-ಕರುಗಳು ರಸ್ತೆ ದಾಟುತ್ತಿವೆ. ಎಚ್ಚರಿಕೆಯಿಂದ ಚಲಿಸಿ.',
+      waterlogging: 'ಮುಂದೆ ರಸ್ತೆಯಲ್ಲಿ ನೀರು ನಿಂತಿದೆ. ಎಚ್ಚರ.',
     },
   },
 };
@@ -94,11 +106,13 @@ const HAZARD_SPECS: Record<
   string,
   { ic: string; lv: number; n: string; r: string; quiet?: boolean; civic?: boolean }
 > = {
-  walker: { ic: '🚶', lv: 3, n: 'Person crossing', r: 'Crossing toward your lane' },
-  side: { ic: '🧍', lv: 0, n: 'Person at roadside', r: 'Near shoulder', quiet: true },
   pothole: { ic: '🕳️', lv: 2, n: 'Pothole', r: 'In your lane', civic: true },
-  curve: { ic: '↪️', lv: 1, n: 'Sharp curve', r: 'On your route' },
-  fog: { ic: '🌫️', lv: 2, n: 'Low visibility', r: 'Ahead on your road' },
+  walker: { ic: '🚶', lv: 3, n: 'Pedestrian', r: 'Crossing toward lane' },
+  animal: { ic: '🐄', lv: 3, n: 'Animal', r: 'Crossing road ahead' },
+  waterlogging: { ic: '🌊', lv: 2, n: 'Waterlogging', r: 'Flooded road surface', civic: true },
+  curve: { ic: '↪️', lv: 1, n: 'Sharp turn', r: 'On your route' },
+  fog: { ic: '🌫️', lv: 2, n: 'Low visibility', r: 'Ahead on road' },
+  side: { ic: '🧍', lv: 0, n: 'Person at roadside', r: 'Near shoulder', quiet: true },
 };
 
 const SEVERITY_COLORS: Record<number, string> = {
@@ -302,13 +316,16 @@ export const InCarDisplay: React.FC = () => {
     };
   }, [liveSyncActive, isBumpActive]);
 
-  // Ingest Hazards coming from Phone Camera AI
+  // Ingest Hazards coming from Phone Camera AI or V2V Road Broadcast
   const ingestPhoneHazards = (detectedHazards: any[]) => {
     detectedHazards.forEach((dh) => {
       let key = 'pothole';
-      if (dh.hazard_type.includes('ANIMAL')) key = 'walker';
-      else if (dh.hazard_type.includes('PEDESTRIAN')) key = 'walker';
-      else if (dh.hazard_type.includes('CURVE')) key = 'curve';
+      const ht = (dh.hazard_type || '').toUpperCase();
+      if (ht.includes('ANIMAL') || ht.includes('COW') || ht.includes('CATTLE') || ht.includes('DOG')) key = 'animal';
+      else if (ht.includes('PEDESTRIAN') || ht.includes('WALKER') || ht.includes('PERSON')) key = 'walker';
+      else if (ht.includes('WATER') || ht.includes('FLOOD')) key = 'waterlogging';
+      else if (ht.includes('CURVE') || ht.includes('TURN') || ht.includes('BEND')) key = 'curve';
+      else if (ht.includes('POTHOLE')) key = 'pothole';
 
       // Check if hazard is already in active queue
       setHazards((prev) => {
@@ -317,6 +334,13 @@ export const InCarDisplay: React.FC = () => {
           return prev.map((h) => (h.id === exists.id ? { ...h, n: h.n + 1 } : h));
         }
         const estDist = dh.distance_m ? Math.round(dh.distance_m) : 220;
+        const spec = HAZARD_SPECS[key] || HAZARD_SPECS.pothole;
+
+        // SHOW & TELL ALERT TO EVERY VEHICLE ON THE ROAD
+        showToast(`📡 V2V Road Alert: ${spec.n} ahead (${estDist}m) — Broadcasted to corridor!`);
+        playChime(spec.lv);
+        speakPhrase(key);
+
         return [
           ...prev,
           {
@@ -324,7 +348,7 @@ export const InCarDisplay: React.FC = () => {
             key,
             distance: estDist,
             n: 1,
-            alerted: false,
+            alerted: true,
             confirmed: true,
           },
         ];
@@ -733,6 +757,36 @@ export const InCarDisplay: React.FC = () => {
                           <circle cy="-34" r="12" fill={col} />
                           <text y="-29" textAnchor="middle" fontSize="15" fontWeight="800" fill="#111">
                             !
+                          </text>
+                        </g>
+                      );
+                    } else if (h.key === 'animal') {
+                      const x = X_proj(0.2, g.y);
+                      return (
+                        <g key={h.id} transform={`translate(${x},${g.y}) scale(${g.k * 1.25})`} opacity={opacity}>
+                          <ellipse rx="42" ry="14" fill="#000" opacity="0.5" />
+                          <ellipse rx="48" ry="17" fill="none" stroke={col} strokeWidth="3" />
+                          <rect x="-24" y="-52" width="48" height="30" rx="8" fill="#e6e9ee" />
+                          <circle cx="-26" cy="-60" r="12" fill="#e6e9ee" />
+                          <path d="M-32 -68 Q-36 -78 -24 -74" stroke="#aeb3bc" strokeWidth="3" fill="none" />
+                          <path d="M-20 -68 Q-16 -78 -28 -74" stroke="#aeb3bc" strokeWidth="3" fill="none" />
+                          <circle cy="-82" r="12" fill={col} />
+                          <text y="-77" textAnchor="middle" fontSize="13" fontWeight="bold" fill="#111">
+                            🐄
+                          </text>
+                        </g>
+                      );
+                    } else if (h.key === 'waterlogging') {
+                      const x = X_proj(0, g.y);
+                      return (
+                        <g key={h.id} transform={`translate(${x},${g.y}) scale(${g.k})`} opacity={opacity}>
+                          <ellipse rx="95" ry="24" fill="#1e40af" opacity="0.75" />
+                          <ellipse rx="85" ry="18" fill="#38bdf8" opacity="0.45" />
+                          <ellipse rx="98" ry="26" fill="none" stroke="#60a5fa" strokeWidth="2.5" strokeDasharray="6 4" />
+                          <path d="M-40 -4 Q0 -14 40 -4" stroke="#e0f2fe" strokeWidth="2" fill="none" opacity="0.8" />
+                          <circle cy="-38" r="12" fill="#38bdf8" />
+                          <text y="-33" textAnchor="middle" fontSize="13" fontWeight="bold" fill="#0f172a">
+                            🌊
                           </text>
                         </g>
                       );

@@ -412,6 +412,34 @@ export const InfotainmentHUD: React.FC = () => {
                     );
                   }
 
+                  if (h.type === 'waterlogging') {
+                    return (
+                      <g key={h.id} transform={`translate(${x},${y}) scale(${s})`}>
+                        <ellipse rx="85" ry="22" fill="#1e40af" opacity="0.8" />
+                        <ellipse rx="75" ry="16" fill="#38bdf8" opacity="0.5" />
+                        <ellipse rx="88" ry="24" fill="none" stroke="#60a5fa" strokeWidth="2.5" strokeDasharray="6 4" />
+                        <circle cy="-34" r="10" fill="#38bdf8" />
+                        <text y="-30" textAnchor="middle" fontSize="12" fontWeight="bold" fill="#0f172a">
+                          🌊
+                        </text>
+                      </g>
+                    );
+                  }
+
+                  if (h.type === 'pedestrian') {
+                    return (
+                      <g key={h.id} transform={`translate(${x},${y}) scale(${s * 1.15})`}>
+                        <ellipse rx="22" ry="7" fill="#000" opacity="0.4" />
+                        <rect x="-8" y="-55" width="16" height="32" rx="6" fill="#e6e9ee" />
+                        <circle cy="-65" r="7" fill="#e6e9ee" />
+                        <circle cy="-82" r="9" fill={col} />
+                        <text y="-78" textAnchor="middle" fontSize="11" fontWeight="bold" fill="#111">
+                          🚶
+                        </text>
+                      </g>
+                    );
+                  }
+
                   if (h.type === 'cattle') {
                     return (
                       <g key={h.id} transform={`translate(${x},${y}) scale(${s * 1.1})`}>
