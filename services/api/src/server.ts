@@ -5,6 +5,8 @@ import { storageEngine } from './store';
 import { geminiService } from '@margai/assistance';
 import { realtimeRelay } from './relay';
 import { v4 as uuidv4 } from 'uuid';
+import path from 'path';
+import { existsSync } from 'fs';
 
 export function createExpressApp(): express.Application {
   const app = express();
@@ -88,6 +90,11 @@ export function createExpressApp(): express.Application {
       verificationState: hazard.verificationState,
       caseUpdated: caseUpdated ? { id: caseUpdated.id, status: caseUpdated.status } : undefined,
     });
+  });
+
+  // Demo support: replayable simulated journeys (never touches live or surveyed records).
+  app.post('/v1/simulation/reset', (req: Request, res: Response) => {
+    res.json({ status: 'ok', removedHazards: storageEngine.resetSimulated() });
   });
 
   // 4. Hazards: List by corridor
@@ -274,6 +281,19 @@ export function createExpressApp(): express.Application {
       res.status(500).json({ error: 'Failed to read inference samples', details: e.message });
     }
   });
+
+  // Serve the built interface from the same Cloud Run service as the existing API.
+  // Vite continues to serve the frontend separately during local development.
+  const webDirectory = path.resolve(__dirname, '../../../apps/web/dist');
+  if (existsSync(path.join(webDirectory, 'index.html'))) {
+    app.use(express.static(webDirectory));
+    app.get('*', (req: Request, res: Response) => {
+      if (/^\/(v1|api|health)(\/|$)/.test(req.path)) {
+        return res.status(404).json({ error: 'This API capability is not available on this service.' });
+      }
+      return res.sendFile(path.join(webDirectory, 'index.html'));
+    });
+  }
 
   return app;
 }

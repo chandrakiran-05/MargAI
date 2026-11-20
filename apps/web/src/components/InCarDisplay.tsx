@@ -1,3 +1,5 @@
+import { useI18n } from '../i18n';
+import { serviceUrl, serviceSocketUrl } from '../services/apiClient';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Volume2,
@@ -117,9 +119,9 @@ const HAZARD_SPECS: Record<
 
 const SEVERITY_COLORS: Record<number, string> = {
   0: '#94a3b8',
-  1: '#4285F4', // Google Blue
-  2: '#FBBC05', // Google Yellow
-  3: '#EA4335', // Google Red
+  1: '#2563eb', // Google Blue
+  2: '#b87912', // Google Yellow
+  3: '#d65b49', // Google Red
 };
 
 const SEVERITY_NAMES: Record<number, string> = {
@@ -129,16 +131,19 @@ const SEVERITY_NAMES: Record<number, string> = {
 };
 
 export const InCarDisplay: React.FC = () => {
+  const { t, language } = useI18n();
+  const currentLang = language;
   // Mode & Themes
   const [mapMode, setMapMode] = useState<boolean>(false);
-  const [nightMode, setNightMode] = useState<boolean>(true);
-  const [currentLang, setCurrentLang] = useState<string>('en');
-  const [langMenuOpen, setLangMenuOpen] = useState<boolean>(false);
+  const [nightMode, setNightMode] = useState<boolean>(false);
   const [muted, setMuted] = useState<boolean>(false);
   const [showQrModal, setShowQrModal] = useState<boolean>(false);
 
   // Smartphone Real-Time Ingestion State
   const [phoneConnected, setPhoneConnected] = useState<boolean>(false);
+  const [relayConnected, setRelayConnected] = useState(false);
+  const lastPhoneSignalRef = useRef(0);
+  const phoneUrl = `${window.location.origin}/?mode=smartphone`;
   const [phoneFps, setPhoneFps] = useState<number>(0);
   const [phoneCameraB64, setPhoneCameraB64] = useState<string | null>(null);
   const [liveSyncActive, setLiveSyncActive] = useState<boolean>(true);
@@ -157,11 +162,11 @@ export const InCarDisplay: React.FC = () => {
     { id: 'h3', key: 'pothole', distance: 180, n: 1, alerted: false, confirmed: true },
   ]);
 
-  const [noteText, setNoteText] = useState<{ text: string; until: number }>({
+  const [noteText, setNoteText] = useState<{ text: string; until: number; params?: Record<string, string | number> }>({
     text: '',
     until: 0,
   });
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<{ source: string; params?: Record<string, string | number> } | null>(null);
 
   // Map route animation reference
   const mapDistanceRef = useRef<number>(0);
@@ -196,6 +201,7 @@ export const InCarDisplay: React.FC = () => {
       bc.onmessage = (event) => {
         const msg = event.data;
         if (!msg) return;
+        lastPhoneSignalRef.current = Date.now();
         setPhoneConnected(true);
         if (msg.fps) setPhoneFps(msg.fps);
 
@@ -242,11 +248,16 @@ export const InCarDisplay: React.FC = () => {
     let ws: WebSocket | null = null;
     let fallbackPollInterval: any = null;
     let isWsOpen = false;
+    let disposed = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/api/ws/telemetry`;
+    const wsUrl = serviceSocketUrl('/api/ws/telemetry', true);
 
     const handleMessage = (data: any) => {
+      if (data.connected === false) { setPhoneConnected(false); return; }
+      if (!data.frame_base64 && !data.telemetry && !data.latest_hazards && !data.connected) return;
+      lastPhoneSignalRef.current = Date.now();
       setPhoneConnected(true);
       if (data.fps) setPhoneFps(data.fps);
 
@@ -282,11 +293,12 @@ export const InCarDisplay: React.FC = () => {
     };
 
     const connectWs = () => {
+      if (disposed) return;
       try {
         ws = new WebSocket(wsUrl);
         ws.onopen = () => {
           isWsOpen = true;
-          setPhoneConnected(true);
+          setRelayConnected(true);
         };
         ws.onmessage = (event) => {
           try {
@@ -296,7 +308,8 @@ export const InCarDisplay: React.FC = () => {
         };
         ws.onclose = () => {
           isWsOpen = false;
-          setTimeout(connectWs, 2000);
+          setRelayConnected(false);
+          if (!disposed) reconnectTimer = setTimeout(connectWs, 2000);
         };
         ws.onerror = () => {
           isWsOpen = false;
@@ -312,7 +325,7 @@ export const InCarDisplay: React.FC = () => {
     fallbackPollInterval = setInterval(async () => {
       if (isWsOpen) return;
       try {
-        const res = await fetch('/api/smartphone/status');
+        const res = await fetch(serviceUrl('/api/smartphone/status', true));
         if (res.ok) {
           const status = await res.json();
           handleMessage(status);
@@ -321,10 +334,20 @@ export const InCarDisplay: React.FC = () => {
     }, 2500);
 
     return () => {
+      disposed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       if (ws) ws.close();
+      setRelayConnected(false);
       if (fallbackPollInterval) clearInterval(fallbackPollInterval);
     };
   }, [liveSyncActive, isBumpActive]);
+
+  useEffect(() => {
+    const freshnessTimer = setInterval(() => {
+      if (Date.now() - lastPhoneSignalRef.current > 10000) setPhoneConnected(false);
+    }, 2000);
+    return () => clearInterval(freshnessTimer);
+  }, []);
 
   // Ingest Hazards coming from Phone Camera AI or V2V Road Broadcast
   const ingestPhoneHazards = (detectedHazards: any[]) => {
@@ -347,7 +370,7 @@ export const InCarDisplay: React.FC = () => {
         const spec = HAZARD_SPECS[key] || HAZARD_SPECS.pothole;
 
         // SHOW & TELL ALERT TO EVERY VEHICLE ON THE ROAD
-        showToast(`📡 V2V Road Alert: ${spec.n} ahead (${estDist}m) — Broadcasted to corridor!`);
+        showToast('{hazard} ahead ({distance} m)', { hazard: t(spec.n), distance: estDist });
         playChime(spec.lv);
         speakPhrase(key);
 
@@ -369,9 +392,10 @@ export const InCarDisplay: React.FC = () => {
   // Bump Shockwave Trigger
   const triggerBumpEvent = (gVal: number) => {
     setIsBumpActive(true);
-    showToast(`Bump felt (${gVal.toFixed(2)}G): Pothole registered on road`);
+    showToast('Vertical impact observed ({value} G)', { value: gVal.toFixed(2) });
     setNoteText({
-      text: `Pothole shockwave logged (${gVal.toFixed(2)}G)`,
+      text: 'Impact observation ({value} G) · review needed',
+      params: { value: gVal.toFixed(2) },
       until: Date.now() + 3500,
     });
     playChime(2);
@@ -384,8 +408,8 @@ export const InCarDisplay: React.FC = () => {
     }, 1200);
   };
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
+  const showToast = (source: string, params?: Record<string, string | number>) => {
+    setToastMessage({source, params});
     clearTimeout(toastTimerRef.current);
     toastTimerRef.current = setTimeout(() => setToastMessage(null), 3000);
   };
@@ -401,22 +425,13 @@ export const InCarDisplay: React.FC = () => {
 
   const speakPhrase = (key: string) => {
     if (muted) return;
-    const catalog = LOCALIZED_CATALOG[currentLang] || LOCALIZED_CATALOG.en;
-    const phrase = catalog.hazardPhrases[key as keyof typeof catalog.hazardPhrases];
+    const catalog = LOCALIZED_CATALOG.en;
+    const phrase = t(catalog.hazardPhrases[key as keyof typeof catalog.hazardPhrases]);
     if (phrase && 'speechSynthesis' in window) {
       try {
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(phrase);
-        u.lang =
-          currentLang === 'hi'
-            ? 'hi-IN'
-            : currentLang === 'ta'
-            ? 'ta-IN'
-            : currentLang === 'te'
-            ? 'te-IN'
-            : currentLang === 'kn'
-            ? 'kn-IN'
-            : 'en-IN';
+        u.lang = `${currentLang}-IN`;
         u.rate = 1.1;
         setTimeout(() => window.speechSynthesis.speak(u), 300);
       } catch (e) {}
@@ -462,7 +477,8 @@ export const InCarDisplay: React.FC = () => {
             if (h.distance <= 0) {
               if (!HAZARD_SPECS[h.key]?.quiet) {
                 setNoteText({
-                  text: `${HAZARD_SPECS[h.key]?.n} passed · Audit ticket queued`,
+                  text: '{hazard} passed · cleared from this view',
+                  params: { hazard: t(HAZARD_SPECS[h.key]?.n || 'Hazard') },
                   until: Date.now() + 3500,
                 });
               }
@@ -502,7 +518,7 @@ export const InCarDisplay: React.FC = () => {
     setHazards((prev) => {
       const exists = prev.find((h) => h.key === k && h.distance > 60);
       if (exists) {
-        showToast(`Merged: same ${HAZARD_SPECS[k].n.toLowerCase()}, ${exists.n + 1} reports`);
+        showToast('Merged {hazard}: {count} reports', { hazard: t(HAZARD_SPECS[k].n), count: exists.n + 1 });
         return prev.map((h) => (h.id === exists.id ? { ...h, n: h.n + 1 } : h));
       }
       return [
@@ -528,141 +544,11 @@ export const InCarDisplay: React.FC = () => {
   const dashFlowDuration = `${(17.5 / Math.max(vehicleSpeed / 3.6, 0.5)).toFixed(2)}s`;
 
   return (
-    <div
-      className={`w-full min-h-[calc(100vh-140px)] flex items-center justify-center p-2 sm:p-4 select-none ${
-        nightMode ? 'bg-[#000000] text-[#f1f2f4]' : 'bg-[#eceef1] text-[#14161a]'
-      }`}
-      style={{
-        fontFamily:
-          'system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Devanagari", "Noto Sans Tamil", "Noto Sans Telugu", "Noto Sans Kannada", sans-serif',
-      }}
-    >
-      {/* 16:9 In-Car Display Cockpit Shell */}
-      <div
-        className={`relative w-full max-w-[1240px] aspect-[16/9] rounded-2xl overflow-hidden p-3 sm:p-5 flex flex-col justify-between shadow-2xl border transition-all ${
-          isBumpActive ? 'translate-y-2.5 duration-75' : 'duration-300'
-        } ${nightMode ? 'bg-[#0d0e10] border-white/10' : 'bg-white border-black/10'}`}
-      >
-        {/* TOP STATUS BAR */}
-        <div className="flex items-center justify-between z-20 pb-2 border-b border-white/10 text-xs sm:text-sm font-mono">
-          <div className="text-base sm:text-lg font-bold tracking-tight text-white/90">{clockStr}</div>
-
-          <div className="flex items-center gap-2">
-            <span className="font-extrabold text-base sm:text-xl tracking-tight text-white">
-              Marg<span className="text-[#4285F4]">AI</span>
-            </span>
-            <span className="text-[10px] bg-white/10 text-white/80 px-2 py-0.5 rounded-full border border-white/10">
-              In-Car Cockpit HUD
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* Live Phone Link Badge */}
-            <button
-              onClick={() => setShowQrModal(true)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all ${
-                phoneConnected
-                  ? 'bg-[#34A853]/20 border-[#34A853] text-[#34A853]'
-                  : 'bg-[#EA4335]/20 border-[#EA4335]/60 text-[#EA4335] animate-pulse'
-              }`}
-            >
-              <Smartphone className="w-3.5 h-3.5" />
-              <span>{phoneConnected ? `Phone Live (${phoneFps} FPS)` : 'Sync Phone'}</span>
-            </button>
-
-            {/* Language Switcher */}
-            <div className="relative">
-              <button
-                onClick={() => setLangMenuOpen(!langMenuOpen)}
-                className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-xs font-sans text-white/90"
-              >
-                {LOCALIZED_CATALOG[currentLang]?.name || 'English'} ▾
-              </button>
-
-              {langMenuOpen && (
-                <div className="absolute right-0 top-8 z-50 bg-[#1a1b1f] border border-white/10 rounded-xl p-1.5 shadow-2xl backdrop-blur-md min-w-[130px]">
-                  {Object.keys(LOCALIZED_CATALOG).map((lk) => (
-                    <button
-                      key={lk}
-                      onClick={() => {
-                        setCurrentLang(lk);
-                        setLangMenuOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-sans transition-colors ${
-                        currentLang === lk ? 'bg-[#4285F4] text-white font-bold' : 'text-slate-300 hover:bg-white/10'
-                      }`}
-                    >
-                      {LOCALIZED_CATALOG[lk].name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* MAIN COCKPIT BODY */}
-        <div className="relative flex-1 grid grid-cols-12 gap-3 sm:gap-4 my-2 min-h-0 overflow-hidden">
-          {/* LEFT TELEMETRY CLUSTER */}
-          <div className="col-span-3 flex flex-col justify-between space-y-2 min-h-0">
-            {/* Speedometer (Driven in Real Time by Smartphone Speed) */}
-            <div className="p-3 sm:p-4 rounded-2xl bg-white/5 border border-white/10">
-              <div className="text-4xl sm:text-6xl font-light tracking-tighter text-white tabular-nums">
-                {vehicleSpeed}
-              </div>
-              <div className="text-[11px] sm:text-xs text-slate-400 font-mono flex items-center justify-between">
-                <span>km/h · live GPS</span>
-                {phoneConnected && <span className="text-emerald-400 font-bold">● Active</span>}
-              </div>
-
-              {/* Gear Indicator */}
-              <div className="mt-3 flex gap-2.5 text-xs sm:text-sm font-mono text-slate-500">
-                <span>P</span>
-                <span>R</span>
-                <span>N</span>
-                <span className="text-white font-black border-b-2 border-[#4285F4]">D</span>
-              </div>
-            </div>
-
-            {/* Ahead Hazards Card */}
-            <div className="flex-1 p-3 rounded-2xl bg-white/5 border border-white/10 flex flex-col justify-between overflow-hidden">
-              <div>
-                <h4 className="text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-2">
-                  Ahead On Road
-                </h4>
-                <div className="space-y-2 text-xs sm:text-sm">
-                  {hazards.slice(0, 3).map((h) => {
-                    const s = HAZARD_SPECS[h.key] || HAZARD_SPECS.pothole;
-                    const col = SEVERITY_COLORS[s.lv] || '#94a3b8';
-                    return (
-                      <div key={h.id} className="flex items-center justify-between gap-1.5">
-                        <span className="flex items-center gap-1.5 truncate">
-                          <span>{s.ic}</span>
-                          <span className="truncate">{s.n}</span>
-                        </span>
-                        <div className="flex items-center gap-1.5 font-mono text-xs tabular-nums">
-                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: col }} />
-                          <b>{Math.round(h.distance)}m</b>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {hazards.length === 0 && (
-                    <div className="text-xs text-slate-500 font-mono py-2">No hazards ahead</div>
-                  )}
-                </div>
-              </div>
-
-              <div className="text-[10px] text-slate-400 font-mono leading-tight pt-2 border-t border-white/10">
-                {noteText.until > Date.now()
-                  ? noteText.text
-                  : `Z-Accel: ${zAccelG.toFixed(2)}G · Tilt: ${roadCurveType}`}
-              </div>
-            </div>
-          </div>
-
-          {/* CENTER VIEWPORT (3D ROAD PERSPECTIVE OR VECTOR MAP) */}
-          <div className="col-span-9 relative rounded-2xl overflow-hidden border border-white/10 bg-[#0f1012]">
+    <div className="premium-page max-w-[1220px] mx-auto px-4 sm:px-6 py-8 sm:py-12 text-[#17263e]">
+      <header className="flex items-end justify-between gap-5 mb-7"><div><h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">{t('Your road, at a glance.')}</h1><p className="text-sm sm:text-base text-[#67788f] mt-3">{t('Interactive cockpit preview')}</p></div><div className="text-right shrink-0"><p className="text-4xl sm:text-5xl tracking-tight font-medium tabular-nums">{vehicleSpeed}</p><p className="text-xs text-[#67788f] mt-1">{phoneConnected ? t('km/h · received telemetry') : t('km/h · demo speed')}</p></div></header>
+      <section className={`premium-panel bg-white border border-[#dce5f2] rounded-[28px] overflow-hidden transition-transform ${isBumpActive ? 'translate-y-1' : ''}`}>
+        <div className="px-5 py-4 flex items-center justify-between gap-3 border-b border-[#e5ecf7]"><span className="text-sm text-[#67788f]">{phoneConnected ? t('Phone telemetry received') : t('Interactive demo')}</span><span className="text-sm text-[#67788f] tabular-nums">{clockStr}</span></div>
+        <div className={`relative min-h-[430px] sm:min-h-[530px] bg-[#edf3ff] overflow-hidden ${nightMode ? 'brightness-75' : ''}`}>
             {!mapMode ? (
               /* 3D PERSPECTIVE ROAD VIEW */
               <svg
@@ -672,17 +558,17 @@ export const InCarDisplay: React.FC = () => {
               >
                 <defs>
                   <linearGradient id="rg" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0" stopColor="#383b42" />
-                    <stop offset="1" stopColor="#25272c" />
+                    <stop offset="0" stopColor="#d7dfed" />
+                    <stop offset="1" stopColor="#b5c6de" />
                   </linearGradient>
                   <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0" stopColor="#0f1012" />
-                    <stop offset="0.45" stopColor="#0f1012" stopOpacity="0.9" />
-                    <stop offset="1" stopColor="#0f1012" stopOpacity="0" />
+                    <stop offset="0" stopColor="#edf3ff" />
+                    <stop offset="0.45" stopColor="#edf3ff" stopOpacity="0.9" />
+                    <stop offset="1" stopColor="#edf3ff" stopOpacity="0" />
                   </linearGradient>
                   <linearGradient id="zg" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0" stopColor="#EA4335" stopOpacity="0" />
-                    <stop offset="1" stopColor="#EA4335" stopOpacity="0.34" />
+                    <stop offset="0" stopColor="#d65b49" stopOpacity="0" />
+                    <stop offset="1" stopColor="#d65b49" stopOpacity="0.34" />
                   </linearGradient>
                 </defs>
 
@@ -872,11 +758,11 @@ export const InCarDisplay: React.FC = () => {
             ) : (
               /* VECTOR SATELLITE MAP VIEW */
               <svg viewBox="0 0 800 470" className="absolute inset-0 w-full h-full">
-                <rect width="800" height="470" fill="#15171b" />
+                <rect width="800" height="470" fill="#edf3ff" />
                 {/* Parks & Water */}
-                <rect x="520" y="80" width="220" height="150" rx="20" fill="#13291b" />
-                <ellipse cx="300" cy="280" rx="140" ry="90" fill="#10283b" />
-                <text x="300" y="285" textAnchor="middle" fontSize="13" fill="#6c97ff" opacity="0.6">
+                <rect x="520" y="80" width="220" height="150" rx="20" fill="#d8f5e8" />
+                <ellipse cx="300" cy="280" rx="140" ry="90" fill="#dbeaff" />
+                <text x="300" y="285" textAnchor="middle" fontSize="13" fill="#526681" opacity="0.6">
                   Lakeview Lake
                 </text>
 
@@ -884,27 +770,27 @@ export const InCarDisplay: React.FC = () => {
                 <path
                   d="M120,400 L260,340 L440,240 L600,160 L720,100"
                   fill="none"
-                  stroke="#2f343c"
+                  stroke="#d9e3f2"
                   strokeWidth="24"
                   strokeLinecap="round"
                 />
                 <path
                   d="M120,400 L260,340 L440,240 L600,160 L720,100"
                   fill="none"
-                  stroke="#4285F4"
+                  stroke="#2563eb"
                   strokeWidth="10"
                   strokeLinecap="round"
                 />
 
                 {/* Vehicle Marker */}
                 <g transform="translate(440,240) rotate(-35)">
-                  <circle r="24" fill="#4285F4" opacity="0.25" />
-                  <path d="M0 -18 L12 12 L0 6 L-12 12 Z" fill="#4285F4" stroke="#fff" strokeWidth="2.5" />
+                  <circle r="24" fill="#2563eb" opacity="0.25" />
+                  <path d="M0 -18 L12 12 L0 6 L-12 12 Z" fill="#2563eb" stroke="#fff" strokeWidth="2.5" />
                 </g>
 
                 {/* POI Markers */}
                 <g transform="translate(600,160)">
-                  <circle r="14" fill="#EA4335" />
+                  <circle r="14" fill="#d65b49" />
                   <text y="5" textAnchor="middle" fontSize="13">
                     🕳️
                   </text>
@@ -912,224 +798,17 @@ export const InCarDisplay: React.FC = () => {
               </svg>
             )}
 
-            {/* Picture-in-Picture Live Rear Camera Feed from Smartphone (Direct DOM - Zero Lag) */}
-            <div
-              ref={pipContainerRef}
-              style={{ display: phoneCameraB64 ? 'block' : 'none' }}
-              className="absolute right-3 bottom-3 w-36 sm:w-44 aspect-video rounded-xl overflow-hidden border border-white/20 shadow-2xl z-20 bg-black"
-            >
-              <img
-                ref={pipImgRef}
-                src={phoneCameraB64 || ''}
-                alt="Phone Camera Stream"
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute top-1 left-1.5 bg-black/80 px-1.5 py-0.5 rounded text-[9px] font-mono text-emerald-400">
-                📱 Phone Cam
-              </div>
-            </div>
-
-            {/* TOP HUD ALERT BANNER */}
-            <div
-              className={`absolute left-1/2 -translate-x-1/2 top-4 z-30 transition-all duration-300 w-[78%] sm:w-[62%] rounded-full p-2.5 sm:p-3 px-4 sm:px-6 backdrop-blur-xl border flex items-center justify-between shadow-2xl ${
-                topHazard
-                  ? 'bg-[#1a1b1f]/90 border-[#EA4335]'
-                  : 'bg-[#1a1b1f]/60 border-white/10 opacity-80'
-              }`}
-            >
-              {topHazard ? (
-                <>
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="w-10 h-10 rounded-full flex items-center justify-center text-xl font-bold border-2"
-                      style={{
-                        backgroundColor: `${SEVERITY_COLORS[HAZARD_SPECS[topHazard.key].lv]}25`,
-                        borderColor: SEVERITY_COLORS[HAZARD_SPECS[topHazard.key].lv],
-                      }}
-                    >
-                      {HAZARD_SPECS[topHazard.key].ic}
-                    </div>
-                    <div>
-                      <div
-                        className="text-[11px] font-bold uppercase tracking-wider"
-                        style={{ color: SEVERITY_COLORS[HAZARD_SPECS[topHazard.key].lv] }}
-                      >
-                        {SEVERITY_NAMES[HAZARD_SPECS[topHazard.key].lv]} · Hazard Alert
-                      </div>
-                      <div className="text-sm sm:text-base font-bold text-white leading-tight">
-                        {LOCALIZED_CATALOG[currentLang]?.hazardPhrases[
-                          topHazard.key as keyof typeof LOCALIZED_CATALOG.en.hazardPhrases
-                        ] || HAZARD_SPECS[topHazard.key].n}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 font-mono">
-                    <div className="text-right">
-                      <span className="text-2xl sm:text-3xl font-light text-white tabular-nums">
-                        {Math.max(0, Math.round(topHazard.distance))}
-                      </span>
-                      <span className="text-xs text-slate-400 ml-1">m</span>
-                    </div>
-
-                    <button
-                      onClick={() => speakPhrase(topHazard.key)}
-                      className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-sm"
-                      title="Replay Voice Warning"
-                    >
-                      🔊
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <div className="w-full text-center text-xs sm:text-sm font-medium text-slate-400">
-                  {noteText.until > Date.now() ? noteText.text : 'Quiet road · Scanning forward path'}
-                </div>
-              )}
-            </div>
-
-            {/* Toast Notification */}
-            {toastMessage && (
-              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 bg-[#1a1b1f]/95 border border-white/20 px-4 py-2 rounded-full text-xs font-mono text-white shadow-2xl animate-in fade-in slide-in-from-bottom-2">
-                {toastMessage}
-              </div>
-            )}
+          <div ref={pipContainerRef} style={{display: phoneCameraB64 ? 'block' : 'none'}} className="absolute right-4 bottom-4 w-32 sm:w-44 aspect-video rounded-2xl overflow-hidden border border-white/80 shadow-lg bg-[#edf3ff]"><img ref={pipImgRef} src={phoneCameraB64 || ''} alt={t('Phone camera stream')} className="w-full h-full object-cover" /></div>
+          <div className={`absolute left-3 right-3 sm:left-6 sm:right-6 top-4 z-30 rounded-2xl p-4 border flex items-center justify-between gap-3 shadow-[0_8px_30px_-15px_rgba(57,83,128,.25)] ${topHazard ? 'bg-[#fff9ed]/95 border-[#efdbb6]' : 'bg-white/90 border-white'}`}>
+            {topHazard ? <><div className="flex items-center gap-3 min-w-0"><span className="w-10 h-10 rounded-full bg-[#fff0d3] grid place-items-center shrink-0 text-xl">{HAZARD_SPECS[topHazard.key].ic}</span><div><p className="text-xs font-medium text-[#a37029] mb-1">{t(SEVERITY_NAMES[HAZARD_SPECS[topHazard.key].lv])}</p><p className="font-medium text-sm sm:text-base">{t(LOCALIZED_CATALOG.en.hazardPhrases[topHazard.key as keyof typeof LOCALIZED_CATALOG.en.hazardPhrases] || HAZARD_SPECS[topHazard.key].n)}</p></div></div><div className="flex items-center gap-3 shrink-0"><span className="text-2xl font-medium tabular-nums">{Math.max(0,Math.round(topHazard.distance))}<span className="text-xs text-[#67788f] ml-1">{t('m')}</span></span><button onClick={() => speakPhrase(topHazard.key)} aria-label={t('Replay voice warning')} className="p-2 rounded-xl bg-white border border-[#efdbb6]"><Volume2 size={17} /></button></div></> : <p className="text-sm text-[#67788f] text-center w-full">{noteText.until > Date.now() ? t(noteText.text, noteText.params) : t('No active warnings · remain attentive')}</p>}
           </div>
+          {toastMessage && <div role="status" className="absolute bottom-4 left-4 right-4 sm:left-1/2 sm:-translate-x-1/2 sm:right-auto z-40 bg-white/95 border border-[#dce5f2] px-4 py-3 rounded-2xl text-sm text-[#526681] shadow-lg">{t(toastMessage.source, toastMessage.params)}</div>}
         </div>
-
-        {/* BOTTOM AUTOMOTIVE DOCK CONTROLS */}
-        <div className="flex items-center justify-between gap-1.5 pt-2 border-t border-white/10 text-xs font-mono">
-          {/* Quick Hazard Spawners */}
-          <div className="flex items-center gap-1 overflow-x-auto py-1">
-            {Object.keys(HAZARD_SPECS).map((k) => (
-              <button
-                key={k}
-                onClick={() => spawnHazard(k)}
-                className="px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-slate-300 hover:text-white flex items-center gap-1.5 transition-all"
-              >
-                <span>{HAZARD_SPECS[k].ic}</span>
-                <span className="hidden sm:inline text-[11px]">{HAZARD_SPECS[k].n}</span>
-              </button>
-            ))}
-          </div>
-
-          {/* Core Cockpit Toggles */}
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => setLiveSyncActive(!liveSyncActive)}
-              className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all ${
-                liveSyncActive
-                  ? 'bg-[#34A853]/20 border-[#34A853] text-[#34A853]'
-                  : 'bg-white/5 border-white/10 text-slate-400'
-              }`}
-            >
-              <Radio className="w-3.5 h-3.5 animate-pulse" />
-              <span>{liveSyncActive ? 'Sync Active' : 'Offline'}</span>
-            </button>
-
-            <button
-              onClick={() => setMapMode(!mapMode)}
-              className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-slate-300 hover:text-white flex items-center gap-1.5"
-            >
-              <Map className="w-3.5 h-3.5" />
-              <span>{mapMode ? 'Road View' : 'Map View'}</span>
-            </button>
-
-            <button
-              onClick={() => setMuted(!muted)}
-              className="p-2 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-slate-300"
-              title="Mute Sound"
-            >
-              {muted ? <VolumeX className="w-4 h-4 text-[#EA4335]" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
-            </button>
-
-            <button
-              onClick={() => setNightMode(!nightMode)}
-              className="p-2 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-slate-300"
-              title="Day/Night Mode"
-            >
-              {nightMode ? <Moon className="w-4 h-4 text-cyan-400" /> : <Sun className="w-4 h-4 text-[#FBBC05]" />}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* QR MODAL TO CONNECT SMARTPHONE CAMERA */}
-      {showQrModal && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[#0D1322] border border-[#1E293B] rounded-2xl max-w-md w-full p-6 relative font-mono text-slate-100 shadow-2xl">
-            <button
-              onClick={() => setShowQrModal(false)}
-              className="absolute top-4 right-4 p-1.5 rounded-lg bg-[#090D16] text-slate-400 hover:text-white border border-[#1E293B]"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            <div className="flex items-center gap-2.5 mb-4">
-              <div className="w-9 h-9 rounded-xl bg-[#EA4335]/20 border border-[#EA4335]/40 flex items-center justify-center text-[#EA4335]">
-                <Smartphone className="w-5 h-5 animate-pulse" />
-              </div>
-              <div>
-                <h3 className="font-bold text-base text-white">Drive with Your Smartphone</h3>
-                <p className="text-xs text-slate-400">Stream real road movements straight into this cockpit</p>
-              </div>
-            </div>
-
-            <div className="bg-[#090D16] p-4 rounded-xl border border-[#1E293B] flex flex-col items-center text-center space-y-3 mb-4">
-              <p className="text-xs text-slate-300 font-sans">
-                Point your phone camera at the QR code to mount your phone as a dashcam:
-              </p>
-              <div className="p-3 bg-white rounded-xl shadow-lg">
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(
-                    'https://10.20.20.141:5174/?mode=smartphone'
-                  )}`}
-                  alt="Smartphone Dashcam QR"
-                  className="w-44 h-44"
-                />
-              </div>
-              <a
-                href="https://10.20.20.141:5174/?mode=smartphone"
-                target="_blank"
-                rel="noreferrer"
-                className="text-[12px] text-cyan-400 font-mono break-all font-bold hover:underline"
-              >
-                https://10.20.20.141:5174/?mode=smartphone
-              </a>
-              <p className="text-[10px] text-slate-400 font-sans max-w-xs">
-                🔒 Secure HTTPS context activates hardware camera on Safari/Chrome. Tap "Advanced &gt; Proceed" if prompted.
-              </p>
-            </div>
-
-            <div className="flex gap-2">
-              <a
-                href="/?mode=smartphone"
-                target="_blank"
-                rel="noreferrer"
-                className="flex-1 py-2.5 px-3 rounded-xl bg-[#4285F4] hover:bg-[#3367D6] text-white font-bold text-xs text-center flex items-center justify-center gap-1.5 transition-all"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>Test in New Tab</span>
-              </a>
-              <button
-                onClick={() => setShowQrModal(false)}
-                className="py-2.5 px-4 rounded-xl bg-[#1E293B] hover:bg-slate-700 text-white font-bold text-xs"
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Embedded CSS Keyframes for Flow Animation */}
-      <style>{`
-        @keyframes flow {
-          to {
-            stroke-dashoffset: -40px;
-          }
-        }
-      `}</style>
+        <div className="p-5 flex justify-center"><button onClick={() => setShowQrModal(true)} className="premium-button"><Smartphone size={17} />{phoneConnected ? t('Phone connected') : t('Connect phone')}</button></div>
+      </section>
+      <details className="mt-5 border border-[#dce5f2] rounded-2xl bg-white/80"><summary className="p-5 cursor-pointer text-sm font-medium text-[#526681]">{t('Settings and details')}</summary><div className="p-5 pt-0 space-y-5"><div className="flex flex-wrap gap-2"><button onClick={() => setMapMode(!mapMode)} className="premium-button-secondary"><Map size={17} />{mapMode ? t('Road illustration') : t('Route illustration')}</button><button onClick={() => setMuted(!muted)} aria-pressed={!muted} className="premium-button-secondary">{muted ? <VolumeX size={17} /> : <Volume2 size={17} />}{muted ? t('Sound off') : t('Sound on')}</button><button onClick={() => setNightMode(!nightMode)} aria-pressed={nightMode} className="premium-button-secondary">{nightMode ? <Sun size={17} /> : <Moon size={17} />}{nightMode ? t('Standard preview') : t('Dim preview')}</button><button onClick={() => setLiveSyncActive(!liveSyncActive)} aria-pressed={liveSyncActive} className="premium-button-secondary"><Radio size={17} />{liveSyncActive ? t('Pause sync') : t('Enable sync')}</button></div><p className="text-sm text-[#67788f]">{relayConnected ? t('Relay connected') : t('Relay not connected')}{' · '}{t('Vertical acceleration: {value} G', {value:zAccelG.toFixed(2)})}</p><details className="border-t border-[#e5ecf7] pt-4"><summary className="cursor-pointer text-sm font-medium text-[#526681]">{t('Try a demo observation')}</summary><div className="flex flex-wrap gap-2 mt-4">{Object.keys(HAZARD_SPECS).map((key) => <button key={key} onClick={() => spawnHazard(key)} className="premium-button-secondary"><span>{HAZARD_SPECS[key].ic}</span>{t(HAZARD_SPECS[key].n)}</button>)}</div></details>{hazards.length > 0 && <div className="grid sm:grid-cols-3 gap-3">{hazards.slice(0,3).map((hazard) => <div key={hazard.id} className="rounded-xl bg-[#f5f8ff] p-3 text-sm text-[#67788f]">{t(HAZARD_SPECS[hazard.key]?.n || 'Hazard')}{' · '}{t('{distance} m', {distance:Math.round(hazard.distance)})}</div>)}</div>}</div></details>
+      {showQrModal && <div className="fixed inset-0 z-[80] bg-[#17263e]/25 backdrop-blur-md flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="cockpit-phone-title" onClick={() => setShowQrModal(false)}><div className="bg-white border border-[#dce5f2] rounded-3xl max-w-md w-full p-6 sm:p-8 relative shadow-xl max-h-[90vh] overflow-y-auto" onClick={(event) => event.stopPropagation()}><button aria-label={t('Close phone connection')} onClick={() => setShowQrModal(false)} className="absolute right-4 top-4 p-2 text-[#67788f]"><X size={20} /></button><Smartphone size={28} className="text-[#2563eb] mb-5" /><h2 id="cockpit-phone-title" className="text-2xl font-semibold">{t('Connect your phone')}</h2><p className="text-sm text-[#67788f] leading-relaxed mt-3">{t('Scan the code and allow camera access.')}</p><div className="my-6 flex justify-center"><img src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(phoneUrl)}`} alt={t('QR code for the phone camera view')} width={180} height={180} /></div><a href={phoneUrl} target="_blank" rel="noreferrer" className="text-sm text-[#2563eb] break-all underline underline-offset-4">{phoneUrl}</a><p className="text-xs text-[#67788f] leading-relaxed mt-4">{t('Use an accessible HTTPS address for a separate phone. Localhost works only on this device.')}</p><a href={phoneUrl} target="_blank" rel="noreferrer" className="premium-button mt-5 w-full justify-center"><ExternalLink size={17} />{t('Open phone view')}</a></div></div>}
+      <style>{`@keyframes flow {to {stroke-dashoffset:-40px;}} @media(prefers-reduced-motion:reduce){svg .dash{animation:none!important;}}`}</style>
     </div>
   );
 };

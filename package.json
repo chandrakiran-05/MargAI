@@ -18,7 +18,8 @@
     "dev:api": "npm run dev -w services/api",
     "dev:web": "npm run dev -w apps/web",
     "start": "node services/api/dist/index.js",
-    "lint": "echo \"Linting clean\""
+    "lint": "echo \"Linting clean\"",
+    "build:ui-preview": "npm run build:packages && npm run build:web && node scripts/prepare-ui-preview.mjs"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

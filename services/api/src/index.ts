@@ -11,6 +11,7 @@ const server = http.createServer(app);
 
 // Initialize WebSocket Relay Server
 realtimeRelay.init(server);
+setInterval(() => realtimeRelay.sweepExpired(), 5000);
 
 server.listen(PORT, () => {
   console.log(`=======================================================`);

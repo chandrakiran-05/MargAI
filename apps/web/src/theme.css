@@ -1,0 +1,47 @@
+/* MargAI premium theme layer — bright, glossy, 3D. Loaded after index.css so it wins. */
+:root{
+  --ink:#1b1750; --ink-soft:#5b5a85; --paper:#fffaf2; --paper-2:#fff3e0;
+  --blue:#2f6bff; --blue-deep:#1a3fc4; --violet:#7a4dff; --violet-deep:#4d27c9;
+  --coral:#ff5d73; --coral-deep:#c9304a; --amber:#ffc23d; --amber-deep:#c98a00;
+  --mint:#18c98a; --mint-deep:#0b8f62; --sky:#3dd5f3;
+  --card:#ffffff; --line:#eadfce; --radius:22px;
+  --grad-hero:linear-gradient(135deg,#2f6bff 0%,#7a4dff 55%,#ff5d73 100%);
+  --shadow-soft:0 18px 50px -18px rgba(47,35,160,.35);
+  --signal:var(--blue); --foreground:var(--ink); --muted:var(--ink-soft); --border:var(--line);
+  color:var(--ink);
+}
+body{background:var(--paper)!important;color:var(--ink)}
+.app-shell{background:
+  radial-gradient(900px 500px at 8% -5%,#cfe0ff88,transparent 60%),
+  radial-gradient(800px 500px at 100% 0%,#ffd6dd88,transparent 60%),
+  radial-gradient(700px 500px at 50% 110%,#fff0b866,transparent 60%),var(--paper)}
+/* 3D glossy buttons — use everywhere */
+.btn3d,.premium-button,.premium-button-secondary{
+  --b:var(--blue);--bd:var(--blue-deep);
+  display:inline-flex;align-items:center;justify-content:center;gap:10px;
+  min-height:48px;padding:12px 26px;border-radius:16px;border:0;font-weight:800;font-size:15px;letter-spacing:.2px;
+  color:#fff;cursor:pointer;position:relative;isolation:isolate;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--b) 70%,#fff) 0%,var(--b) 45%,color-mix(in srgb,var(--b) 88%,#000) 100%);
+  box-shadow:inset 0 2px 0 #ffffffa8,inset 0 -3px 0 #00000022,0 6px 0 var(--bd),0 16px 24px -6px color-mix(in srgb,var(--bd) 70%,transparent);
+  transition:transform .14s cubic-bezier(.3,1.6,.5,1),box-shadow .14s,filter .2s;text-shadow:0 1px 0 #0003;overflow:hidden}
+.btn3d:before,.premium-button:before{content:"";position:absolute;left:8%;right:8%;top:3px;height:42%;border-radius:12px 12px 40px 40px;background:linear-gradient(#ffffff80,#ffffff00);z-index:-1;pointer-events:none}
+.btn3d:hover,.premium-button:hover{transform:translateY(-2px);filter:saturate(1.12) brightness(1.04);box-shadow:inset 0 2px 0 #ffffffb0,inset 0 -3px 0 #00000022,0 8px 0 var(--bd),0 22px 30px -8px color-mix(in srgb,var(--bd) 70%,transparent)}
+.btn3d:active,.premium-button:active{transform:translateY(5px);box-shadow:inset 0 2px 0 #ffffff80,inset 0 -2px 0 #00000022,0 1px 0 var(--bd),0 4px 8px -2px color-mix(in srgb,var(--bd) 60%,transparent)}
+.btn3d.coral{--b:var(--coral);--bd:var(--coral-deep)} .btn3d.violet{--b:var(--violet);--bd:var(--violet-deep)}
+.btn3d.mint{--b:var(--mint);--bd:var(--mint-deep)} .btn3d.amber{--b:var(--amber);--bd:var(--amber-deep);color:#3b2a00;text-shadow:0 1px 0 #fff6}
+.btn3d.white,.premium-button-secondary{--b:#fff;--bd:#d9cdbb;color:var(--ink);text-shadow:none;background:linear-gradient(180deg,#fff,#f7f0e4)}
+.btn3d.white:before,.premium-button-secondary:before{display:none}
+.btn3d.big,.button-large{min-height:58px;padding:16px 34px;font-size:17px;border-radius:20px}
+.btn3d.round{width:56px;height:56px;padding:0;border-radius:50%}
+.btn3d:disabled{opacity:.5;transform:none;filter:grayscale(.4)}
+.glass{background:#ffffffb8;backdrop-filter:blur(18px) saturate(1.4);border:1px solid #ffffffcc;box-shadow:var(--shadow-soft);border-radius:var(--radius)}
+.grad-text{background:var(--grad-hero);-webkit-background-clip:text;background-clip:text;color:transparent}
+@keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+@keyframes pulse-ring{0%{transform:scale(.6);opacity:.7}100%{transform:scale(2.2);opacity:0}}
+@media(prefers-reduced-motion:reduce){.btn3d,.premium-button{transition:none}}
+/* mobile / installed-app polish */
+html{-webkit-text-size-adjust:100%}
+body{overscroll-behavior-y:none}
+.btn3d,.premium-button{-webkit-user-select:none;user-select:none;min-height:48px}
+.site-header{padding-top:env(safe-area-inset-top)}
+@media(display-mode:standalone){.site-footer{display:none}}

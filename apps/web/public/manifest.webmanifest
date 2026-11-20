@@ -1,0 +1,20 @@
+{
+  "name": "MargAI — shared road awareness",
+  "short_name": "MargAI",
+  "description": "A phone-first road safety companion: see a hazard, share it, warn the next driver.",
+  "start_url": "/?view=smartphone&source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fffaf2",
+  "theme_color": "#2f6bff",
+  "icons": [
+    {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ],
+  "shortcuts": [
+    {"name": "Start a drive", "url": "/?view=smartphone"},
+    {"name": "Road reports", "url": "/?view=civic"}
+  ]
+}
