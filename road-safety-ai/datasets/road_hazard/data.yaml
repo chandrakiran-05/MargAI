@@ -1,0 +1,14 @@
+# Road Safety AI Hazard Detection Dataset
+path: /Users/purushothambalamurali/Desktop/BUILDATHON/road-safety-ai/datasets/road_hazard
+train: images/train
+val: images/val
+
+names:
+  0: pothole
+  1: animal
+  2: pedestrian
+  3: vehicle
+  4: accident
+  5: debris
+
+nc: 6

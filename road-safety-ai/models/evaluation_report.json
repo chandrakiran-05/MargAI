@@ -1,0 +1,37 @@
+{
+  "hardware": "mps",
+  "epochs": 15,
+  "image_size": 320,
+  "batch_size": 16,
+  "overall_metrics": {
+    "mean_precision": 0.0047,
+    "mean_recall": 0.4751,
+    "f1_score": 0.0094,
+    "mAP_50": 0.0759,
+    "mAP_50_95": 0.0549
+  },
+  "per_class_performance": {
+    "pothole": {
+      "mAP50_95": 0.009
+    },
+    "animal": {
+      "mAP50_95": 0.2021
+    },
+    "pedestrian": {
+      "mAP50_95": 0.0748
+    },
+    "vehicle": {
+      "mAP50_95": 0.0396
+    },
+    "accident": {
+      "mAP50_95": 0.0013
+    },
+    "debris": {
+      "mAP50_95": 0.0029
+    }
+  },
+  "model_paths": {
+    "pytorch_best": "/Users/purushothambalamurali/Desktop/BUILDATHON/road-safety-ai/models/best.pt",
+    "onnx": "/Users/purushothambalamurali/Desktop/BUILDATHON/road-safety-ai/models/road_safety_detector.onnx"
+  }
+}
