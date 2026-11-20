@@ -1,0 +1,14 @@
+# MargAI Road Hazard Perception Dataset
+# Google Startup Buildathon India 2026
+
+path: /Users/purushothambalamurali/Desktop/BUILDATHON/ml/datasets/margai_hazard
+train: images/train
+val: images/val
+
+# Classes
+names:
+  0: pothole
+  1: animal
+  2: pedestrian
+
+nc: 3

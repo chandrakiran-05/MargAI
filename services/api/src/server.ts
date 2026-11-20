@@ -232,5 +232,48 @@ export function createExpressApp(): express.Application {
     res.json(openApiSpec);
   });
 
+  // 12. Trained ML Model Metrics & Benchmarks
+  app.get('/v1/ml/metrics', (req: Request, res: Response) => {
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const baseMlDir = path.resolve(__dirname, '../../../ml/models');
+      const metricsFile = path.join(baseMlDir, 'training_metrics.json');
+      const benchmarkFile = path.join(baseMlDir, 'benchmark_report.json');
+      const manifestFile = path.join(baseMlDir, 'export_manifest.json');
+
+      const trainingMetrics = fs.existsSync(metricsFile) ? JSON.parse(fs.readFileSync(metricsFile, 'utf8')) : null;
+      const benchmarkReport = fs.existsSync(benchmarkFile) ? JSON.parse(fs.readFileSync(benchmarkFile, 'utf8')) : null;
+      const exportManifest = fs.existsSync(manifestFile) ? JSON.parse(fs.readFileSync(manifestFile, 'utf8')) : null;
+
+      res.json({
+        model: 'YOLO11n-Edge Road Hazard Detector',
+        targetClasses: ['pothole', 'animal', 'pedestrian'],
+        training: trainingMetrics,
+        benchmark: benchmarkReport,
+        export: exportManifest,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: 'Failed to read ML metrics', details: e.message });
+    }
+  });
+
+  // 13. ML Test Inference Samples
+  app.get('/v1/ml/samples', (req: Request, res: Response) => {
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const summaryFile = path.resolve(__dirname, '../../../ml/inference/output/inference_summary.json');
+      if (fs.existsSync(summaryFile)) {
+        const samples = JSON.parse(fs.readFileSync(summaryFile, 'utf8'));
+        res.json({ samples });
+      } else {
+        res.json({ samples: [] });
+      }
+    } catch (e: any) {
+      res.status(500).json({ error: 'Failed to read inference samples', details: e.message });
+    }
+  });
+
   return app;
 }

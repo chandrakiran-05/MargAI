@@ -1,0 +1,9 @@
+{
+  "pytorch": "/Users/purushothambalamurali/Desktop/BUILDATHON/ml/models/best.pt",
+  "onnx": "/Users/purushothambalamurali/Desktop/BUILDATHON/ml/models/margai_detector.onnx",
+  "torchscript": "/Users/purushothambalamurali/Desktop/BUILDATHON/ml/models/margai_detector.torchscript",
+  "classes": ["pothole", "animal", "pedestrian"],
+  "inputShape": [1, 3, 320, 320],
+  "precision": "FP16 / FP32",
+  "edgeTarget": "Google LiteRT / MediaPipe / ONNX Runtime Mobile"
+}

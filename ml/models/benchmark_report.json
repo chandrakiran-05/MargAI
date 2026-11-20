@@ -1,0 +1,23 @@
+{
+  "timestamp": "2026-11-20T08:27:45Z",
+  "architecture": "YOLO11n-Edge",
+  "device": "mps",
+  "inputResolution": "320x320",
+  "iterations": 100,
+  "latencyMetricsMs": {
+    "mean": 11.28,
+    "p50_median": 9.76,
+    "p90": 16.77,
+    "p95": 16.95,
+    "p99": 18.64,
+    "min": 7.66,
+    "max": 19.34
+  },
+  "throughputFps": 88.7,
+  "buildathonBudgetMs": 100.0,
+  "budgetCompliance": {
+    "marginMs": 83.05,
+    "compliant": true,
+    "verdict": "PASSED - Sub-100ms Edge Perception Requirement Fulfilled"
+  }
+}

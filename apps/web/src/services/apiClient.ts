@@ -66,6 +66,16 @@ export class MargAIClient {
     return res.json();
   }
 
+  public async getMLMetrics(): Promise<any> {
+    const res = await fetch(`${API_BASE}/ml/metrics`);
+    return res.json();
+  }
+
+  public async getMLSamples(): Promise<any> {
+    const res = await fetch(`${API_BASE}/ml/samples`);
+    return res.json();
+  }
+
   /**
    * Connect to Google Cloud Run WebSocket Relay
    */
