@@ -338,7 +338,7 @@ export const DriverCompanion: React.FC<DriverCompanionProps> = ({
               }}
               className={`px-3 py-1 rounded-lg font-mono text-xs transition-all whitespace-nowrap ${
                 currentLang === lang.code
-                  ? 'bg-blue-600 text-white font-bold'
+                  ? 'bg-[#4285F4] text-white font-bold shadow-[0_0_12px_rgba(66,133,244,0.5)]'
                   : 'bg-[#090D16] text-slate-400 hover:text-white border border-[#1E293B]'
               }`}
             >
@@ -351,8 +351,8 @@ export const DriverCompanion: React.FC<DriverCompanionProps> = ({
           onClick={() => setIsMuted(!isMuted)}
           className={`px-2.5 py-1 rounded-lg text-xs font-mono flex items-center gap-1 border transition-all ${
             isMuted
-              ? 'bg-red-500/10 text-red-400 border-red-500/30'
-              : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+              ? 'bg-[#EA4335]/10 text-[#EA4335] border-[#EA4335]/30'
+              : 'bg-[#34A853]/10 text-[#34A853] border-[#34A853]/30'
           }`}
         >
           {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
@@ -364,10 +364,10 @@ export const DriverCompanion: React.FC<DriverCompanionProps> = ({
       <div
         className={`rounded-2xl p-6 border transition-all ${
           !activeAlert
-            ? 'bg-[#081812] border-emerald-500/40'
+            ? 'bg-[#071610] border-[#34A853]/50'
             : activeAlert.riskLevel === 'urgent'
-            ? 'bg-[#200A0D] border-rose-500 alert-luxury-urgent'
-            : 'bg-[#1C1206] border-amber-500'
+            ? 'bg-[#1C080B] border-[#EA4335] alert-luxury-urgent'
+            : 'bg-[#191206] border-[#FBBC05]'
         }`}
       >
         <div className="flex flex-col md:flex-row items-center justify-between gap-6 text-center md:text-left">
@@ -375,10 +375,10 @@ export const DriverCompanion: React.FC<DriverCompanionProps> = ({
             <HazardPictogram type={activePictogramType} size="xl" />
 
             <div>
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-black/40 border border-white/10 text-xs font-mono uppercase text-white mb-2">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-black/60 border border-white/10 text-xs font-mono uppercase text-white mb-2">
                 <span
                   className={`w-2 h-2 rounded-full ${
-                    !activeAlert ? 'bg-emerald-400' : 'bg-rose-400 animate-ping'
+                    !activeAlert ? 'bg-[#34A853]' : 'bg-[#EA4335] animate-ping'
                   }`}
                 />
                 <span>
@@ -402,17 +402,17 @@ export const DriverCompanion: React.FC<DriverCompanionProps> = ({
 
               <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 mt-3 font-mono">
                 {activeAlert ? (
-                  <div className="px-3 py-1.5 rounded-xl bg-black/60 border border-amber-400/30 text-amber-300">
+                  <div className="px-3 py-1.5 rounded-xl bg-black/70 border border-[#FBBC05]/40 text-[#FBBC05]">
                     <span className="text-xs text-slate-400 mr-2">DISTANCE:</span>
                     <strong className="text-2xl">{activeAlert.distanceAheadM} M</strong>
                   </div>
                 ) : (
-                  <div className="px-3 py-1.5 rounded-xl bg-black/40 border border-emerald-500/20 text-emerald-300 text-sm">
-                    Status: Verified Normal
+                  <div className="px-3 py-1.5 rounded-xl bg-black/50 border border-[#34A853]/30 text-[#34A853] text-sm">
+                    Status: Carriageway Clear
                   </div>
                 )}
 
-                <div className="px-3 py-1.5 rounded-xl bg-black/50 border border-white/10 text-white">
+                <div className="px-3 py-1.5 rounded-xl bg-black/60 border border-white/10 text-white">
                   <span className="text-xs text-slate-400 mr-2">SPEED:</span>
                   <strong className="text-2xl">{speedKmh}</strong> <span className="text-xs text-slate-400">KM/H</span>
                 </div>
@@ -423,9 +423,9 @@ export const DriverCompanion: React.FC<DriverCompanionProps> = ({
           <div className="flex flex-col sm:flex-row md:flex-col gap-2.5 w-full md:w-auto">
             <button
               onClick={speakCurrentStatus}
-              className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-sm shadow transition-all active:scale-95"
+              className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-[#4285F4] hover:bg-[#3367D6] text-white font-bold text-sm shadow-[0_0_15px_rgba(66,133,244,0.4)] transition-all active:scale-95"
             >
-              <Volume2 className="w-5 h-5 text-indigo-600" />
+              <Volume2 className="w-5 h-5 text-white" />
               <span>Voice Playback</span>
             </button>
 
@@ -441,48 +441,55 @@ export const DriverCompanion: React.FC<DriverCompanionProps> = ({
         </div>
       </div>
 
-      {/* TEST ACTION TILES */}
+      {/* TEST ACTION TILES (4 Google Colors) */}
       <div className="p-4 rounded-2xl bg-[#0D1322] border border-[#1E293B]">
         <div className="flex items-center justify-between mb-3 text-xs font-mono text-slate-400">
-          <span>TEST EVENT INJECTION</span>
-          <span>Relay: {relayLatencyMs}ms</span>
+          <span className="flex items-center gap-2">
+            <span className="font-bold text-slate-200">GOOGLE V2V TEST INJECTION</span>
+            <span className="text-[10px] text-slate-400">· 4-Quadrant Verification</span>
+          </span>
+          <span className="text-[#34A853]">Relay Latency: {relayLatencyMs}ms</span>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {/* 1. Google Red: Pothole */}
           <button
             onClick={triggerPotholeScenario}
-            className="flex flex-col items-center justify-center p-3.5 rounded-xl bg-[#1C090D] border border-rose-500/30 hover:border-rose-400 text-white transition-all active:scale-95"
+            className="flex flex-col items-center justify-center p-3.5 rounded-xl bg-[#EA4335]/10 border border-[#EA4335]/40 hover:border-[#EA4335] hover:bg-[#EA4335]/20 text-white transition-all active:scale-95 group"
           >
             <HazardPictogram type="pothole" size="md" className="mb-1.5" />
-            <span className="text-sm font-bold text-rose-200">Pothole (D40)</span>
-            <span className="text-[10px] text-rose-400 font-mono">30m Ahead</span>
+            <span className="text-sm font-bold text-[#EA4335]">Pothole D40</span>
+            <span className="text-[10px] text-slate-400 font-mono">Google Red · 30m</span>
           </button>
 
+          {/* 2. Google Yellow: Cattle */}
           <button
             onClick={triggerCattleScenario}
-            className="flex flex-col items-center justify-center p-3.5 rounded-xl bg-[#1E1104] border border-amber-500/30 hover:border-amber-400 text-white transition-all active:scale-95"
+            className="flex flex-col items-center justify-center p-3.5 rounded-xl bg-[#FBBC05]/10 border border-[#FBBC05]/40 hover:border-[#FBBC05] hover:bg-[#FBBC05]/20 text-white transition-all active:scale-95 group"
           >
             <HazardPictogram type="cattle" size="md" className="mb-1.5" />
-            <span className="text-sm font-bold text-amber-200">Cattle Obstacle</span>
-            <span className="text-[10px] text-amber-400 font-mono">42m Ahead</span>
+            <span className="text-sm font-bold text-[#FBBC05]">Cattle Path</span>
+            <span className="text-[10px] text-slate-400 font-mono">Google Yellow · 42m</span>
           </button>
 
+          {/* 3. Google Blue: Sharp Turn */}
           <button
             onClick={triggerSharpCurveScenario}
-            className="flex flex-col items-center justify-center p-3.5 rounded-xl bg-[#180A2A] border border-purple-500/30 hover:border-purple-400 text-white transition-all active:scale-95"
+            className="flex flex-col items-center justify-center p-3.5 rounded-xl bg-[#4285F4]/10 border border-[#4285F4]/40 hover:border-[#4285F4] hover:bg-[#4285F4]/20 text-white transition-all active:scale-95 group"
           >
             <HazardPictogram type="sharp_curve" size="md" className="mb-1.5" />
-            <span className="text-sm font-bold text-purple-200">Sharp Turn</span>
-            <span className="text-[10px] text-purple-400 font-mono">R=65m (35 km/h)</span>
+            <span className="text-sm font-bold text-[#4285F4]">Sharp Curve</span>
+            <span className="text-[10px] text-slate-400 font-mono">Google Blue · 35 km/h</span>
           </button>
 
+          {/* 4. Google Green: Clear Road */}
           <button
             onClick={triggerClearRoad}
-            className="flex flex-col items-center justify-center p-3.5 rounded-xl bg-[#081F17] border border-emerald-500/30 hover:border-emerald-400 text-white transition-all active:scale-95"
+            className="flex flex-col items-center justify-center p-3.5 rounded-xl bg-[#34A853]/10 border border-[#34A853]/40 hover:border-[#34A853] hover:bg-[#34A853]/20 text-white transition-all active:scale-95 group"
           >
             <HazardPictogram type="safe" size="md" className="mb-1.5" />
-            <span className="text-sm font-bold text-emerald-200">Clear Road</span>
-            <span className="text-[10px] text-emerald-400 font-mono">Normal</span>
+            <span className="text-sm font-bold text-[#34A853]">Clear Road</span>
+            <span className="text-[10px] text-slate-400 font-mono">Google Green · Safe</span>
           </button>
         </div>
       </div>

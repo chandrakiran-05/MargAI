@@ -7,6 +7,13 @@ interface AudioWaveformProps {
   label?: string;
 }
 
+const GOOGLE_COLORS = [
+  '#4285F4', // Google Blue
+  '#EA4335', // Google Red
+  '#FBBC05', // Google Yellow
+  '#34A853', // Google Green
+];
+
 export const AudioWaveform: React.FC<AudioWaveformProps> = ({
   isActive,
   barCount = 24,
@@ -31,29 +38,37 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = ({
   }, [isActive, barCount]);
 
   return (
-    <div className={`p-3 rounded-2xl bg-[#0B101D]/90 border border-[#1E293B] shadow-inner ${className}`}>
+    <div className={`p-3 rounded-2xl bg-[#090D16]/95 border border-[#1E293B] shadow-inner ${className}`}>
       <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 mb-2">
-        <span className="flex items-center gap-1.5 uppercase font-bold text-cyan-400">
-          <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-cyan-400 animate-pulse' : 'bg-slate-600'}`}></span>
-          <span>{label}</span>
+        <span className="flex items-center gap-1.5 uppercase font-bold text-slate-200">
+          <span className="flex items-center gap-0.5">
+            <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-[#4285F4] animate-pulse' : 'bg-slate-600'}`}></span>
+            <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-[#EA4335] animate-pulse' : 'bg-slate-600'}`}></span>
+            <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-[#FBBC05] animate-pulse' : 'bg-slate-600'}`}></span>
+            <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-[#34A853] animate-pulse' : 'bg-slate-600'}`}></span>
+          </span>
+          <span className="ml-1 tracking-wider">{label}</span>
         </span>
-        <span className="text-slate-500 font-mono">
-          {isActive ? 'STREAMING 48kHz' : 'STANDBY'}
+        <span className="text-slate-400 font-mono text-[10px]">
+          {isActive ? 'GEMINI LIVE 48kHz' : 'STANDBY'}
         </span>
       </div>
 
       <div className="flex items-end justify-between gap-1 h-10 px-1">
-        {heights.map((h, i) => (
-          <div
-            key={i}
-            className={`w-full rounded-full transition-all duration-100 ${
-              isActive
-                ? 'bg-gradient-to-t from-cyan-600 via-cyan-400 to-sky-300 shadow-[0_0_8px_rgba(34,211,238,0.5)]'
-                : 'bg-slate-800'
-            }`}
-            style={{ height: `${h}%` }}
-          />
-        ))}
+        {heights.map((h, i) => {
+          const color = GOOGLE_COLORS[i % GOOGLE_COLORS.length];
+          return (
+            <div
+              key={i}
+              className="w-full rounded-full transition-all duration-100"
+              style={{
+                height: `${h}%`,
+                backgroundColor: isActive ? color : '#1E293B',
+                boxShadow: isActive ? `0 0 8px ${color}66` : 'none',
+              }}
+            />
+          );
+        })}
       </div>
     </div>
   );

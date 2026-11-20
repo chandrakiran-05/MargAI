@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Navbar, TabType } from './components/Navbar';
 import { CommandCenter } from './components/CommandCenter';
 import { DriverCompanion } from './components/DriverCompanion';
+import { BuildathonDeck } from './components/BuildathonDeck';
 import { CivicDashboard } from './components/CivicDashboard';
 import { GoogleStackInspector } from './components/GoogleStackInspector';
 import { PublicSite } from './components/PublicSite';
@@ -52,6 +53,10 @@ export const App: React.FC = () => {
           <DriverCompanion selectedLanguage={selectedLanguage} />
         )}
 
+        {currentTab === 'deck' && (
+          <BuildathonDeck onLaunchHUD={() => setCurrentTab('command-center')} />
+        )}
+
         {currentTab === 'civic' && <CivicDashboard />}
 
         {currentTab === 'google-stack' && <GoogleStackInspector />}
@@ -64,20 +69,30 @@ export const App: React.FC = () => {
         )}
       </main>
 
-      {/* Sleek Command Center Footer */}
+      {/* Sleek Command Center Footer with Google 4-Color Branding */}
       <footer className="border-t border-[#1E293B] bg-[#07090F] py-4 px-4 lg:px-8 text-xs text-slate-400">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="grid grid-cols-2 gap-0.5 w-4 h-4">
+              <div className="bg-[#4285F4] rounded-tl-sm"></div>
+              <div className="bg-[#EA4335] rounded-tr-sm"></div>
+              <div className="bg-[#FBBC05] rounded-bl-sm"></div>
+              <div className="bg-[#34A853] rounded-br-sm"></div>
+            </div>
             <span className="font-extrabold text-white tracking-wide">MargAI</span>
             <span className="text-slate-400 font-mono text-[11px]">
               — Automotive Command Center HUD & Civic Intelligence
             </span>
           </div>
 
-          <div className="flex items-center gap-4 text-slate-400 font-mono text-[11px]">
-            <span className="text-cyan-400">✓ 3-Pane HUD Active</span>
+          <div className="flex items-center gap-3 text-slate-400 font-mono text-[11px]">
+            <span className="text-[#34A853]">✓ Relay Online</span>
             <span>·</span>
-            <span>Google Startup Buildathon India 2026</span>
+            <span className="text-[#4285F4]">Google DeepMind</span>
+            <span>·</span>
+            <span className="text-[#EA4335]">Google Cloud</span>
+            <span>·</span>
+            <span>Startup Buildathon India 2026</span>
           </div>
         </div>
       </footer>

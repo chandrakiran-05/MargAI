@@ -81,36 +81,37 @@ export const BeforeAfterSlider: React.FC<BeforeAfterSliderProps> = ({
 
       {/* DIVIDER LINE & HANDLE */}
       <div
-        className="absolute top-0 bottom-0 w-1 bg-gradient-to-b from-cyan-400 via-white to-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.8)] z-20 pointer-events-none"
+        className="absolute top-0 bottom-0 w-1 bg-gradient-to-b from-[#4285F4] via-white to-[#34A853] shadow-[0_0_12px_rgba(66,133,244,0.8)] z-20 pointer-events-none"
         style={{ left: `${sliderPos}%` }}
       >
-        <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-slate-900 border-2 border-cyan-400 shadow-xl flex items-center justify-center text-cyan-300">
+        <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-[#090D16] border-2 border-[#4285F4] shadow-xl flex items-center justify-center text-[#4285F4]">
           <MoveHorizontal className="w-4 h-4" />
         </div>
       </div>
 
       {/* TOP BADGES */}
       <div className="absolute top-3 left-3 z-30 pointer-events-none">
-        <span className="px-2.5 py-1 rounded-xl bg-red-950/80 border border-red-500/40 text-red-200 text-[10px] font-bold font-mono shadow-md backdrop-blur-md flex items-center gap-1.5">
-          <AlertTriangle className="w-3 h-3 text-red-400" />
+        <span className="px-2.5 py-1 rounded-xl bg-[#EA4335]/20 border border-[#EA4335]/60 text-[#EA4335] text-[10px] font-bold font-mono shadow-md backdrop-blur-md flex items-center gap-1.5">
+          <AlertTriangle className="w-3 h-3 text-[#EA4335]" />
           <span>{beforeLabel}</span>
         </span>
       </div>
 
       <div className="absolute top-3 right-3 z-30 pointer-events-none">
-        <span className="px-2.5 py-1 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-200 text-[10px] font-bold font-mono shadow-md backdrop-blur-md flex items-center gap-1.5">
-          <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+        <span className="px-2.5 py-1 rounded-xl bg-[#34A853]/20 border border-[#34A853]/60 text-[#34A853] text-[10px] font-bold font-mono shadow-md backdrop-blur-md flex items-center gap-1.5">
+          <CheckCircle2 className="w-3 h-3 text-[#34A853]" />
           <span>{afterLabel}</span>
         </span>
       </div>
 
       {/* BOTTOM SLA AUDIT PILL */}
       <div className="absolute bottom-3 left-3 right-3 z-30 pointer-events-none flex items-center justify-between">
-        <span className="px-2.5 py-1 rounded-lg bg-black/70 backdrop-blur-md text-[10px] font-mono text-slate-300 border border-white/10">
-          Drag slider to compare repair
+        <span className="px-2.5 py-1 rounded-lg bg-black/80 backdrop-blur-md text-[10px] font-mono text-slate-300 border border-[#1E293B]">
+          Drag slider to audit repair SLA
         </span>
-        <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-mono font-bold backdrop-blur-md">
-          SLA: 48h Met (BBMP Ward 85)
+        <span className="px-2.5 py-1 rounded-lg bg-[#34A853]/20 text-[#34A853] border border-[#34A853]/50 text-[10px] font-mono font-bold backdrop-blur-md flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#34A853]"></span>
+          <span>SLA: 48h Met (BBMP Ward 85)</span>
         </span>
       </div>
     </div>

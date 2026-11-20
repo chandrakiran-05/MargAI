@@ -82,9 +82,9 @@ export const CivicDashboard: React.FC = () => {
       {/* Top Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 rounded-2xl bg-[#0D1322] border border-[#1E293B] mb-5">
         <div>
-          <div className="flex items-center gap-2 text-xs font-mono text-cyan-400 mb-1">
+          <div className="flex items-center gap-2 text-xs font-mono text-[#4285F4] mb-1">
             <Building2 className="w-3.5 h-3.5" />
-            <span>MUNICIPAL DEFECT REGISTRY · BBMP / NHAI</span>
+            <span>MUNICIPAL DEFECT REGISTRY · BBMP / NHAI · GOVTECH</span>
           </div>
           <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
             Road Hazard Evidence & Maintenance Dispatch
@@ -97,7 +97,7 @@ export const CivicDashboard: React.FC = () => {
         <div className="flex items-center gap-3 font-mono text-xs">
           <div className="text-right hidden sm:block">
             <div className="text-slate-400 text-[10px]">REPAIR SLA</div>
-            <div className="text-emerald-400 font-bold">48 Hours (Bituminous Seal)</div>
+            <div className="text-[#34A853] font-bold">48 Hours (Bituminous Seal)</div>
           </div>
           <button
             onClick={loadCases}
@@ -105,6 +105,37 @@ export const CivicDashboard: React.FC = () => {
           >
             Refresh
           </button>
+        </div>
+      </div>
+
+      {/* 4 Google-Color Key Metrics (From Buildathon Problem Statement) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5 font-mono">
+        {/* Card 1: Google Red */}
+        <div className="p-3.5 rounded-xl bg-[#EA4335]/10 border border-[#EA4335]/30 space-y-1">
+          <div className="text-[10px] uppercase font-bold text-[#EA4335]">Critical Impact</div>
+          <div className="text-xl font-bold text-white">1.77L+ Fatalities</div>
+          <div className="text-[10px] text-slate-400 font-sans">Preventable road hazards</div>
+        </div>
+
+        {/* Card 2: Google Yellow */}
+        <div className="p-3.5 rounded-xl bg-[#FBBC05]/10 border border-[#FBBC05]/30 space-y-1">
+          <div className="text-[10px] uppercase font-bold text-[#FBBC05]">Economic Drain</div>
+          <div className="text-xl font-bold text-white">₹1000s Cr Loss</div>
+          <div className="text-[10px] text-slate-400 font-sans">Commercial fleet damage</div>
+        </div>
+
+        {/* Card 3: Google Blue */}
+        <div className="p-3.5 rounded-xl bg-[#4285F4]/10 border border-[#4285F4]/30 space-y-1">
+          <div className="text-[10px] uppercase font-bold text-[#4285F4]">Roads API Sync</div>
+          <div className="text-xl font-bold text-white">road_placeId</div>
+          <div className="text-[10px] text-slate-400 font-sans">Road-locked deduplication</div>
+        </div>
+
+        {/* Card 4: Google Green */}
+        <div className="p-3.5 rounded-xl bg-[#34A853]/10 border border-[#34A853]/30 space-y-1">
+          <div className="text-[10px] uppercase font-bold text-[#34A853]">Contractor SLA</div>
+          <div className="text-xl font-bold text-white">48h SLA Audit</div>
+          <div className="text-[10px] text-slate-400 font-sans">Zero duplicate complaints</div>
         </div>
       </div>
 

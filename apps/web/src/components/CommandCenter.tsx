@@ -200,9 +200,10 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
       const bh = 95;
       const bCorner = 18;
 
-      ctx.strokeStyle = '#EF4444';
+      // Google Red (#EA4335) for critical pothole bounding box
+      ctx.strokeStyle = '#EA4335';
       ctx.lineWidth = 3;
-      ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
+      ctx.fillStyle = 'rgba(234, 67, 53, 0.12)';
       ctx.fillRect(bx, by, bw, bh);
 
       ctx.beginPath();
@@ -220,7 +221,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
       ctx.lineTo(bx + bw, by + bh - bCorner);
       ctx.stroke();
 
-      ctx.fillStyle = '#EF4444';
+      ctx.fillStyle = '#EA4335';
       ctx.fillRect(bx, by - 22, bw, 22);
       ctx.fillStyle = '#FFFFFF';
       ctx.font = 'bold 11px monospace';
@@ -406,7 +407,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="p-3 rounded-xl bg-[#080C16] border border-[#1E293B]">
                 <div className="text-[10px] text-slate-400 uppercase">Z-ACCEL</div>
-                <div className="text-xl font-bold text-rose-400">
+                <div className="text-xl font-bold text-[#EA4335]">
                   {zAccelG > 0 ? `+${zAccelG}G` : `${zAccelG}G`}
                 </div>
                 <div className="text-[10px] text-slate-500">200Hz Sample</div>
@@ -414,7 +415,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
 
               <div className="p-3 rounded-xl bg-[#080C16] border border-[#1E293B]">
                 <div className="text-[10px] text-slate-400 uppercase">ALTITUDE (MSL)</div>
-                <div className="text-xl font-bold text-cyan-300">{baroAltM}m</div>
+                <div className="text-xl font-bold text-[#4285F4]">{baroAltM}m</div>
                 <div className="text-[10px] text-slate-500">912.4 hPa</div>
               </div>
             </div>
@@ -422,16 +423,16 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
             <div className="grid grid-cols-2 gap-2 pt-1">
               <button
                 onClick={handleInjectPothole}
-                className="py-2 px-2.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-bold font-mono transition-all"
+                className="py-2 px-2.5 rounded-lg bg-[#EA4335]/15 hover:bg-[#EA4335]/25 border border-[#EA4335]/40 text-[#EA4335] text-xs font-bold font-mono transition-all"
               >
-                Inject Pothole
+                Inject Pothole (Red)
               </button>
 
               <button
                 onClick={handleInjectObstacle}
-                className="py-2 px-2.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-bold font-mono transition-all"
+                className="py-2 px-2.5 rounded-lg bg-[#FBBC05]/15 hover:bg-[#FBBC05]/25 border border-[#FBBC05]/40 text-[#FBBC05] text-xs font-bold font-mono transition-all"
               >
-                Inject Obstacle
+                Inject Cattle (Yellow)
               </button>
             </div>
           </div>
@@ -440,22 +441,22 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
         {/* PANE 2: CORRIDOR GRAPH & V2V RELAY */}
         <div
           className={`lg:col-span-4 p-4 rounded-2xl border flex flex-col justify-between space-y-4 ${
-            nightHudMode ? 'bg-[#000000] border-cyan-500/30' : 'bg-[#0D1322] border-[#1E293B]'
+            nightHudMode ? 'bg-[#000000] border-[#4285F4]/30' : 'bg-[#0D1322] border-[#1E293B]'
           }`}
         >
           <div>
             <div className="flex items-center justify-between pb-2.5 border-b border-[#1E293B] mb-3">
               <span className="text-xs font-bold text-slate-300 font-mono flex items-center gap-2">
-                <MapPin className="w-3.5 h-3.5 text-cyan-400" />
+                <MapPin className="w-3.5 h-3.5 text-[#4285F4]" />
                 <span>PANE 2 · CORRIDOR & V2V</span>
               </span>
-              <span className="text-xs font-mono text-cyan-400">{speedKmh} KM/H</span>
+              <span className="text-xs font-mono text-[#FBBC05] font-bold">{speedKmh} KM/H</span>
             </div>
 
             <div className="relative rounded-xl overflow-hidden border border-[#1E293B] bg-[#05070E] aspect-[16/11] p-3 flex flex-col justify-between">
               <svg viewBox="0 0 400 280" className="absolute inset-0 w-full h-full">
                 <defs>
-                  <filter id="cyanGlow" x="-20%" y="-20%" width="140%" height="140%">
+                  <filter id="googleBlueGlow" x="-20%" y="-20%" width="140%" height="140%">
                     <feGaussianBlur stdDeviation="4" result="blur" />
                     <feMerge>
                       <feMergeNode in="blur" />
@@ -469,19 +470,19 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                 </pattern>
                 <rect width="100%" height="100%" fill="url(#radarGrid)" />
 
-                {/* CYAN CARRIAGEWAY PATH */}
+                {/* GOOGLE BLUE CARRIAGEWAY PATH */}
                 <path
                   d="M 60 40 C 130 90, 180 140, 240 180 C 290 210, 320 230, 360 250"
                   fill="none"
-                  stroke="#0891B2"
+                  stroke="#1D4ED8"
                   strokeWidth="10"
-                  opacity="0.25"
-                  filter="url(#cyanGlow)"
+                  opacity="0.3"
+                  filter="url(#googleBlueGlow)"
                 />
                 <path
                   d="M 60 40 C 130 90, 180 140, 240 180 C 290 210, 320 230, 360 250"
                   fill="none"
-                  stroke="#22D3EE"
+                  stroke="#4285F4"
                   strokeWidth="4"
                   strokeLinecap="round"
                 />
@@ -489,44 +490,44 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                 {/* V2V WAVE RINGS */}
                 {v2vActive && (
                   <g transform="translate(180, 140)">
-                    <circle r="18" fill="none" stroke="#EF4444" strokeWidth="2" className="animate-ping" />
-                    <circle r="36" fill="none" stroke="#22D3EE" strokeWidth="1.5" className="animate-ping" style={{ animationDelay: '200ms' }} />
+                    <circle r="18" fill="none" stroke="#EA4335" strokeWidth="2" className="animate-ping" />
+                    <circle r="36" fill="none" stroke="#4285F4" strokeWidth="1.5" className="animate-ping" style={{ animationDelay: '200ms' }} />
                   </g>
                 )}
 
-                {/* Vehicle Markers */}
+                {/* Vehicle Markers with Google Colors */}
                 <g transform="translate(180, 140)">
-                  <circle r="8" fill="#3B82F6" stroke="#FFFFFF" strokeWidth="2" />
+                  <circle r="8" fill="#4285F4" stroke="#FFFFFF" strokeWidth="2" />
                   <text x="12" y="4" fill="#93C5FD" fontSize="9" fontFamily="monospace">KA-03 (LEAD)</text>
                 </g>
 
                 <g transform="translate(205, 158)">
-                  <circle r="7" fill="#EF4444" stroke="#FEE2E2" strokeWidth="1.5" />
+                  <circle r="7" fill="#EA4335" stroke="#FEE2E2" strokeWidth="1.5" />
                   <text x="10" y="4" fill="#FCA5A5" fontSize="9" fontFamily="monospace">D40 (30m)</text>
                 </g>
 
                 <g transform="translate(110, 75)">
-                  <circle r="8" fill="#10B981" stroke="#FFFFFF" strokeWidth="2" />
-                  <text x="12" y="4" fill="#6EE7B7" fontSize="9" fontFamily="monospace">KA-05 (YOU)</text>
+                  <circle r="8" fill="#34A853" stroke="#FFFFFF" strokeWidth="2" />
+                  <text x="12" y="4" fill="#86EFAC" fontSize="9" fontFamily="monospace">KA-05 (YOU)</text>
                 </g>
               </svg>
 
-              <div className="relative z-10 flex items-center justify-between text-[10px] font-mono text-cyan-300">
-                <span className="bg-black/80 px-2 py-0.5 rounded border border-cyan-500/30">
-                  PLACE_ID: ChIJ3Xo98sAUrjsR
+              <div className="relative z-10 flex items-center justify-between text-[10px] font-mono text-slate-300">
+                <span className="bg-black/80 px-2 py-0.5 rounded border border-[#4285F4]/40 text-[#4285F4]">
+                  ROADS_API: ChIJ3Xo98sAUrjsR
                 </span>
-                <span className="bg-black/80 px-2 py-0.5 rounded border border-emerald-500/30 text-emerald-400">
-                  PEERS: 2 LINKED
+                <span className="bg-black/80 px-2 py-0.5 rounded border border-[#34A853]/40 text-[#34A853]">
+                  V2V: 2 PEERS ACTIVE
                 </span>
               </div>
 
               {activeAlert && (
-                <div className="relative z-10 p-2.5 rounded-lg bg-red-950/90 border border-red-500 text-white font-mono flex items-center justify-between">
+                <div className="relative z-10 p-2.5 rounded-lg bg-[#EA4335]/20 border border-[#EA4335] text-white font-mono flex items-center justify-between backdrop-blur-md">
                   <div className="flex items-center gap-1.5 text-xs">
-                    <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
-                    <span>{localizedAlert?.text || activeAlert.messageKey}</span>
+                    <AlertTriangle className="w-3.5 h-3.5 text-[#EA4335]" />
+                    <span className="text-slate-100 font-bold">{localizedAlert?.text || activeAlert.messageKey}</span>
                   </div>
-                  <span className="text-xs font-bold text-yellow-300">{activeAlert.distanceAheadM}M</span>
+                  <span className="text-xs font-bold text-[#FBBC05]">{activeAlert.distanceAheadM}M</span>
                 </div>
               )}
             </div>
@@ -554,32 +555,32 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
           <div>
             <div className="flex items-center justify-between pb-2.5 border-b border-[#1E293B] mb-3">
               <span className="text-xs font-bold text-slate-300 font-mono flex items-center gap-2">
-                <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
+                <ShieldCheck className="w-3.5 h-3.5 text-[#34A853]" />
                 <span>PANE 3 · DEFECT REGISTRY & SLA</span>
               </span>
-              <span className="text-[10px] font-mono text-emerald-400">BBMP SAHAAYA</span>
+              <span className="text-[10px] font-mono text-[#34A853] font-bold">BBMP SAHAAYA · GOVTECH</span>
             </div>
 
             <div className="p-3 rounded-xl bg-[#080C16] border border-[#1E293B] space-y-2 mb-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-white">Kadubeesanahalli Defect</span>
-                <span className="px-2 py-0.5 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-300 font-mono text-[10px] font-bold">
+                <span className="px-2 py-0.5 rounded-full bg-[#EA4335]/20 border border-[#EA4335]/40 text-[#EA4335] font-mono text-[10px] font-bold">
                   SEVERITY: 9.2/10
                 </span>
               </div>
 
               <div className="grid grid-cols-2 gap-1 text-[11px] font-mono text-slate-400">
-                <div>Ticket: <span className="text-cyan-300">BBMP-RD-666762</span></div>
+                <div>Ticket: <span className="text-[#4285F4]">BBMP-RD-666762</span></div>
                 <div>Ward: <span className="text-slate-200">Mahadevapura 85</span></div>
-                <div>Passes: <span className="text-blue-400">4 Vehicles</span></div>
-                <div>SLA: <span className="text-emerald-400">48h Bitumen Seal</span></div>
+                <div>Passes: <span className="text-[#FBBC05]">4 Vehicles</span></div>
+                <div>SLA: <span className="text-[#34A853]">48h Bitumen Seal</span></div>
               </div>
             </div>
 
             <div>
               <div className="text-[10px] font-bold text-slate-400 uppercase mb-1.5 font-mono flex items-center justify-between">
                 <span>Contractor Repair Audit</span>
-                <span className="text-emerald-400">Verified</span>
+                <span className="text-[#34A853]">SLA Verified</span>
               </div>
               <BeforeAfterSlider />
             </div>
@@ -596,10 +597,10 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                   audioSynthesizer.speakLocalVoicePhrase('Statutory notice prepared.', selectedLanguage);
                 }
               }}
-              className="w-full py-2 px-3 rounded-xl bg-purple-600/30 hover:bg-purple-600/40 text-purple-200 text-xs font-mono font-bold border border-purple-500/40 transition-all flex items-center justify-center gap-1.5"
+              className="w-full py-2 px-3 rounded-xl bg-[#4285F4]/15 hover:bg-[#4285F4]/25 text-[#4285F4] text-xs font-mono font-bold border border-[#4285F4]/40 transition-all flex items-center justify-center gap-1.5"
             >
               <FileText className="w-3.5 h-3.5" />
-              <span>Draft Notice (IRC:SP:84)</span>
+              <span>Draft Notice (Gemini 2.5 Flash · IRC:SP:84)</span>
             </button>
 
             <button
@@ -612,10 +613,10 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                   audioSynthesizer.speakLocalVoicePhrase('Dispatched to municipal portal.', selectedLanguage);
                 }
               }}
-              className="w-full py-2 px-3 rounded-xl bg-emerald-600/30 hover:bg-emerald-600/40 text-emerald-200 text-xs font-mono font-bold border border-emerald-500/40 transition-all flex items-center justify-center gap-1.5"
+              className="w-full py-2 px-3 rounded-xl bg-[#34A853]/15 hover:bg-[#34A853]/25 text-[#34A853] text-xs font-mono font-bold border border-[#34A853]/40 transition-all flex items-center justify-center gap-1.5"
             >
               <Send className="w-3.5 h-3.5" />
-              <span>Dispatch Ticket to BBMP</span>
+              <span>Dispatch Ticket to BBMP (Sahaaya Portal)</span>
             </button>
           </div>
         </div>
