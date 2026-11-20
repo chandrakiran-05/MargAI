@@ -1,0 +1,24 @@
+{
+  "scenarioId": "stray_cattle_crossing_demo",
+  "name": "Stray Cattle (Indian Desi Cow) Crossing Corridor",
+  "corridorId": "blr_outer_ring_road",
+  "hazard": {
+    "type": "animal",
+    "location": {
+      "latitude": 12.9221,
+      "longitude": 77.6765,
+      "horizontalAccuracyM": 1.5,
+      "provenance": "measured"
+    },
+    "roadReference": {
+      "corridorId": "blr_outer_ring_road",
+      "edgeId": "orr_south_bellandur_main",
+      "roadName": "Outer Ring Road (near Devarabeesanahalli)",
+      "carriageway": "forward",
+      "speedLimitKmh": 60
+    },
+    "animalClass": "cow",
+    "motion": "crossing_lane",
+    "lateralVelocityMps": -1.4
+  }
+}

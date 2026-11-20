@@ -1,0 +1,57 @@
+{
+  "scenarioId": "pothole_lead_trailing_demo",
+  "name": "Lead Vehicle Pothole Detection -> Realtime Trailing Warning",
+  "corridorId": "blr_outer_ring_road",
+  "hazard": {
+    "type": "pothole",
+    "location": {
+      "latitude": 12.9275,
+      "longitude": 77.6842,
+      "horizontalAccuracyM": 1.2,
+      "provenance": "measured"
+    },
+    "roadReference": {
+      "corridorId": "blr_outer_ring_road",
+      "edgeId": "orr_south_bellandur_main",
+      "roadName": "Outer Ring Road (Southbound Main Flyover)",
+      "carriageway": "forward",
+      "speedLimitKmh": 60
+    },
+    "severityScore": 8.5,
+    "confidence": 0.94
+  },
+  "leadVehicle": {
+    "vehicleId": "veh_lead_KA03_8821",
+    "startPose": {
+      "latitude": 12.9328,
+      "longitude": 77.6914,
+      "headingDeg": 225,
+      "speedMps": 14.5,
+      "horizontalAccuracyM": 2.1
+    },
+    "detectionTimeOffsetSec": 4.0
+  },
+  "trailingVehicle": {
+    "vehicleId": "veh_trailing_KA05_1209",
+    "startPose": {
+      "latitude": 12.9355,
+      "longitude": 77.6938,
+      "headingDeg": 225,
+      "speedMps": 16.0,
+      "horizontalAccuracyM": 1.8
+    },
+    "timeBehindLeadSec": 8.0
+  },
+  "oppositeVehicle": {
+    "vehicleId": "veh_northbound_KA01_4402",
+    "startPose": {
+      "latitude": 12.9250,
+      "longitude": 77.6810,
+      "headingDeg": 45,
+      "speedMps": 15.0,
+      "horizontalAccuracyM": 2.0
+    },
+    "edgeId": "orr_north_bellandur_main",
+    "expectedAlert": null
+  }
+}

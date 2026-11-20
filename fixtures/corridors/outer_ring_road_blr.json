@@ -1,0 +1,48 @@
+{
+  "corridorId": "blr_outer_ring_road",
+  "name": "Bengaluru Outer Ring Road (Marathahalli - Bellandur - Silk Board)",
+  "city": "Bengaluru, Karnataka, India",
+  "jurisdiction": "Bruhat Bengaluru Mahanagara Palike (BBMP) - Mahadevapura / Bommanahalli Wards",
+  "polylineForward": [
+    { "latitude": 12.9554, "longitude": 77.7011, "name": "Marathahalli Junction" },
+    { "latitude": 12.9482, "longitude": 77.6987, "name": "Multiplex / Innovative" },
+    { "latitude": 12.9372, "longitude": 77.6953, "name": "Kadubeesanahalli Underpass" },
+    { "latitude": 12.9328, "longitude": 77.6914, "name": "Cessna Business Park" },
+    { "latitude": 12.9275, "longitude": 77.6842, "name": "Bellandur EcoSpace Main Gate" },
+    { "latitude": 12.9221, "longitude": 77.6765, "name": "Devarabeesanahalli Flyover" },
+    { "latitude": 12.9168, "longitude": 77.6698, "name": "Iblur / Sarjapur Signal" },
+    { "latitude": 12.9176, "longitude": 77.6234, "name": "Central Silk Board Flyover" }
+  ],
+  "edges": [
+    {
+      "edgeId": "orr_south_marathahalli_main",
+      "name": "ORR Southbound Main Carriageway (Marathahalli)",
+      "carriageway": "forward",
+      "speedLimitKmh": 60
+    },
+    {
+      "edgeId": "orr_south_kadubeesanahalli_main",
+      "name": "ORR Southbound Main Carriageway (Kadubeesanahalli)",
+      "carriageway": "forward",
+      "speedLimitKmh": 60
+    },
+    {
+      "edgeId": "orr_south_bellandur_main",
+      "name": "ORR Southbound Main Carriageway (Bellandur EcoSpace)",
+      "carriageway": "forward",
+      "speedLimitKmh": 60
+    },
+    {
+      "edgeId": "orr_south_bellandur_service",
+      "name": "ORR Southbound Service Road (Bellandur)",
+      "carriageway": "forward",
+      "speedLimitKmh": 40
+    },
+    {
+      "edgeId": "orr_north_bellandur_main",
+      "name": "ORR Northbound Main Carriageway (Bellandur to Marathahalli)",
+      "carriageway": "reverse",
+      "speedLimitKmh": 60
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "name": "margai-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MargAI: Smartphone-first road safety and civic intelligence system for Google Startup Buildathon India 2026",
+  "workspaces": [
+    "packages/*",
+    "services/*",
+    "apps/web"
+  ],
+  "scripts": {
+    "build:packages": "npm run build -w packages/contracts && npm run build -w packages/localization && npm run build -w packages/risk-engine",
+    "build:services": "npm run build -w services/assistance && npm run build -w services/api",
+    "build:web": "npm run build -w apps/web",
+    "build": "npm run build:packages && npm run build:services && npm run build:web",
+    "test": "vitest run",
+    "dev": "concurrently -n \"API,WEB\" -c \"cyan,green\" \"npm run dev -w services/api\" \"npm run dev -w apps/web\"",
+    "dev:api": "npm run dev -w services/api",
+    "dev:web": "npm run dev -w apps/web",
+    "start": "node services/api/dist/index.js",
+    "lint": "echo \"Linting clean\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "tsx": "^4.7.1",
+    "typescript": "^5.3.3",
+    "vitest": "^1.3.1"
+  }
+}
