@@ -166,7 +166,53 @@ export const InCarDisplay: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // 1. Poll Smartphone State & Road Movements from AI Server (/api/smartphone/...)
+  // 1. Zero-Latency BroadcastChannel Listener for Instant Local Road Telemetry
+  useEffect(() => {
+    let bc: BroadcastChannel | null = null;
+    try {
+      bc = new BroadcastChannel('margai_road_telemetry');
+      bc.onmessage = (event) => {
+        const msg = event.data;
+        if (!msg) return;
+        setPhoneConnected(true);
+        if (msg.fps) setPhoneFps(msg.fps);
+
+        // A. Speed synchronization
+        if (msg.speed_kmh !== undefined && msg.speed_kmh > 0) {
+          setVehicleSpeed(Math.round(msg.speed_kmh));
+        }
+
+        // B. Road Curvature & Tilting
+        if (msg.road_curve) {
+          setRoadCurveType(msg.road_curve);
+        }
+
+        // C. Accelerometer Bump Shockwave Impact
+        if (msg.z_accel_g !== undefined) {
+          setZAccelG(msg.z_accel_g);
+          if (msg.z_accel_g > 1.8 && !isBumpActive) {
+            triggerBumpEvent(msg.z_accel_g);
+          }
+        }
+
+        // D. Picture-in-Picture Camera Frame
+        if (msg.camera_b64) {
+          setPhoneCameraB64(msg.camera_b64);
+        }
+
+        // E. Ingest Hazards
+        if (msg.hazards && msg.hazards.length > 0) {
+          ingestPhoneHazards(msg.hazards);
+        }
+      };
+    } catch (e) {}
+
+    return () => {
+      if (bc) bc.close();
+    };
+  }, [isBumpActive]);
+
+  // 2. Poll Smartphone State & Road Movements from AI Server (/api/smartphone/...)
   useEffect(() => {
     if (!liveSyncActive) return;
 
@@ -218,7 +264,7 @@ export const InCarDisplay: React.FC = () => {
       }
     };
 
-    pollInterval = setInterval(pollSmartphone, 120);
+    pollInterval = setInterval(pollSmartphone, 75);
     return () => clearInterval(pollInterval);
   }, [liveSyncActive, isBumpActive]);
 

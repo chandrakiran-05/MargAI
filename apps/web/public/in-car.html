@@ -242,7 +242,46 @@ function pollSmartphoneMovement() {
     }).catch(function(){});
 }
 
-setInterval(pollSmartphoneMovement, 150);
+// Zero-Latency Local BroadcastChannel Sync
+try {
+  var bc = new BroadcastChannel('margai_road_telemetry');
+  bc.onmessage = function(ev) {
+    var d = ev.data;
+    if (!d) return;
+    if (d.speed_kmh !== undefined && d.speed_kmh > 0) {
+      var spd = Math.round(d.speed_kmh);
+      V = spd / 3.6;
+      $('sp').textContent = spd;
+      var line = $('dashLine');
+      if (line) line.style.animationDuration = (17.5 / Math.max(V, 0.5)) + 's';
+    }
+    if (d.road_curve) {
+      var ct = d.road_curve;
+      if (ct === 'SHARP_LEFT' || ct === 'HAIRPIN_BEND') {
+        $('world').style.transform = 'rotate(-5deg)';
+      } else if (ct === 'SHARP_RIGHT') {
+        $('world').style.transform = 'rotate(5deg)';
+      } else {
+        $('world').style.transform = 'none';
+      }
+    }
+    if (d.z_accel_g && d.z_accel_g > 1.8) {
+      var stage = $('cockpitStage');
+      stage.style.transform = 'translateY(10px)';
+      setTimeout(function(){ stage.style.transform = 'none'; }, 150);
+      toast('Pothole bump impact registered (' + d.z_accel_g.toFixed(2) + 'G)');
+      note = { t: 'Pothole bump logged by smartphone (' + d.z_accel_g.toFixed(2) + 'G)', u: Date.now() + 3500 };
+      beep(2);
+    }
+    if (d.camera_b64) {
+      var camImg = $('cam');
+      camImg.src = d.camera_b64;
+      camImg.style.display = 'block';
+    }
+  };
+} catch(e){}
+
+setInterval(pollSmartphoneMovement, 80);
 
 $('lv').onclick = function(){
   phoneSync = !phoneSync;

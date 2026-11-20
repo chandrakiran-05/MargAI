@@ -92,7 +92,7 @@ def get_recent_alerts(limit: int = 50, category: Optional[str] = None, severity:
 @app.get("/api/smartphone/status")
 def get_smartphone_status():
     now = time.time()
-    is_active = (now - latest_smartphone_state["last_frame_timestamp"]) < 5.0
+    is_active = (now - latest_smartphone_state["last_frame_timestamp"]) < 12.0
     latest_smartphone_state["connected"] = is_active
     return {
         "connected": is_active,
@@ -153,10 +153,21 @@ async def process_smartphone_frame(payload: SmartphoneFramePayload):
     z_g = payload.z_accel_g or 1.02
     if z_g > 1.8:
         # Physical impact detected by smartphone accelerometer
+        has_pothole = False
         for hz in hazards:
             if "POTHOLE" in hz['hazard_type']:
                 hz['risk_level'] = "CRITICAL"
                 hz['explanation'] = f"Pothole confirmed by smartphone Z-axis accelerometer impact spike ({z_g:.2f}G)!"
+                has_pothole = True
+        if not has_pothole:
+            hazards.append({
+                "hazard_type": "POTHOLE",
+                "bbox": [100, 120, 220, 160],
+                "confidence": 0.96,
+                "risk_level": "CRITICAL",
+                "distance_m": 15.0,
+                "explanation": f"Pothole detected via high-G accelerometer road shockwave ({z_g:.2f}G)!"
+            })
 
     # 5. Encode annotated HUD image back to JPEG base64
     _, buffer = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 75])

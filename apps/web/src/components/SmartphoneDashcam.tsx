@@ -47,6 +47,8 @@ interface TelemetryData {
 export const SmartphoneDashcam: React.FC = () => {
   const [cameraActive, setCameraActive] = useState<boolean>(false);
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
+  const [videoSource, setVideoSource] = useState<'camera' | 'sample_video' | 'custom_file'>('camera');
+  const [sourceNotice, setSourceNotice] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
   const [fullScreen, setFullScreen] = useState<boolean>(false);
   const [nightMode, setNightMode] = useState<boolean>(false);
@@ -67,10 +69,22 @@ export const SmartphoneDashcam: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const hudCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const streamLoopRef = useRef<number | null>(null);
   const isProcessingRef = useRef<boolean>(false);
   const lastAlertTimeRef = useRef<number>(0);
+  const bcRef = useRef<BroadcastChannel | null>(null);
+
+  // Initialize BroadcastChannel for Zero-Latency Sync with In-Car Display
+  useEffect(() => {
+    try {
+      bcRef.current = new BroadcastChannel('margai_road_telemetry');
+    } catch (e) {}
+    return () => {
+      if (bcRef.current) bcRef.current.close();
+    };
+  }, []);
 
   // 1. Initialize Smartphone Motion & GPS Sensors
   useEffect(() => {
@@ -108,8 +122,37 @@ export const SmartphoneDashcam: React.FC = () => {
     return () => window.removeEventListener('devicemotion', handleMotion);
   }, []);
 
-  // 2. Camera Controls
-  const startCamera = async () => {
+  // 2. Camera & Video Stream Controls
+  const startStreamSource = async () => {
+    // If user selected pre-recorded road video loop
+    if (videoSource === 'sample_video') {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+        videoRef.current.src = '/road_sample.mp4';
+        videoRef.current.loop = true;
+        videoRef.current.muted = true;
+        videoRef.current.playsInline = true;
+        try {
+          await videoRef.current.play();
+          setCameraActive(true);
+          setIsStreaming(true);
+          setSourceNotice('Playing Real-World Road Driving Loop');
+        } catch (e) {
+          console.error('Video play error:', e);
+        }
+      }
+      return;
+    }
+
+    if (videoSource === 'custom_file') {
+      return;
+    }
+
+    // Otherwise, attempt hardware smartphone camera
     try {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
@@ -133,23 +176,34 @@ export const SmartphoneDashcam: React.FC = () => {
           videoRef.current?.play();
           setCameraActive(true);
           setIsStreaming(true);
+          setSourceNotice('Live Smartphone Rear Dashcam Active');
         };
       }
     } catch (err) {
-      console.error('Camera access error:', err);
-      // Fallback without facingMode constraint
-      try {
-        const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
-        streamRef.current = fallbackStream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = fallbackStream;
-          videoRef.current.play();
-          setCameraActive(true);
-          setIsStreaming(true);
-        }
-      } catch (fallbackErr) {
-        alert('Please allow camera access on your smartphone to stream the road feed.');
+      console.warn('Camera access error, switching to road driving video loop:', err);
+      // Seamlessly fallback to real-world road video loop so demo is never blocked!
+      setVideoSource('sample_video');
+      setSourceNotice('Camera unavailable over plain HTTP on LAN. Playing Road Driving Loop.');
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && videoRef.current) {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
       }
+      const url = URL.createObjectURL(file);
+      videoRef.current.srcObject = null;
+      videoRef.current.src = url;
+      videoRef.current.loop = true;
+      videoRef.current.muted = true;
+      videoRef.current.play();
+      setVideoSource('custom_file');
+      setCameraActive(true);
+      setIsStreaming(true);
+      setSourceNotice(`Playing Custom Road Video (${file.name})`);
     }
   };
 
@@ -167,14 +221,18 @@ export const SmartphoneDashcam: React.FC = () => {
   };
 
   const toggleFacingMode = () => {
+    if (videoSource !== 'camera') {
+      setVideoSource('camera');
+      return;
+    }
     const nextMode = facingMode === 'environment' ? 'user' : 'environment';
     setFacingMode(nextMode);
   };
 
   useEffect(() => {
-    startCamera();
+    startStreamSource();
     return () => stopCamera();
-  }, [facingMode]);
+  }, [facingMode, videoSource]);
 
   // 3. High-Speed Sub-Second AI Ingestion Loop
   useEffect(() => {
@@ -241,6 +299,16 @@ export const SmartphoneDashcam: React.FC = () => {
           if (data.fps) {
             setFps(data.fps);
           }
+
+          // Zero-Latency Local Broadcast to MargAI In-Car Display
+          bcRef.current?.postMessage({
+            speed_kmh: speedKmh,
+            z_accel_g: zAccelG,
+            road_curve: data.telemetry?.road_geometry?.curve_type || roadCurve,
+            camera_b64: b64,
+            hazards: data.hazards || [],
+            fps: data.fps || fps,
+          });
         }
       } catch (err) {
         // Fallback simulation if backend unreachable
@@ -253,7 +321,95 @@ export const SmartphoneDashcam: React.FC = () => {
     // Run at ~12-15 FPS (sub-second real-time responsiveness)
     intervalId = setInterval(captureAndSendFrame, 80);
     return () => clearInterval(intervalId);
-  }, [cameraActive, gpsCoords, zAccelG, speedKmh]);
+  }, [cameraActive, gpsCoords, zAccelG, speedKmh, roadCurve]);
+
+  // Kinetic Road Movement Triggers for Interactive Testing
+  const triggerBumpSim = async (gVal: number) => {
+    setZAccelG(gVal);
+    if ('vibrate' in navigator) {
+      navigator.vibrate([200, 80, 200]);
+    }
+    const potholeHz: HazardBox = {
+      hazard_type: 'POTHOLE',
+      bbox: [100, 120, 220, 160],
+      risk_level: 'CRITICAL',
+      confidence: 0.98,
+      distance_m: 10,
+    };
+    setActiveHazards([potholeHz]);
+    triggerAudioAndHaptic('POTHOLE', 'CRITICAL');
+
+    bcRef.current?.postMessage({
+      speed_kmh: speedKmh,
+      z_accel_g: gVal,
+      road_curve: roadCurve,
+      camera_b64: null,
+      hazards: [potholeHz],
+      fps,
+    });
+
+    try {
+      await fetch('/api/smartphone/frame', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image_base64: 'data:image/jpeg;base64,',
+          latitude: gpsCoords?.lat || 12.9716,
+          longitude: gpsCoords?.lng || 77.5946,
+          altitude: 915.2,
+          z_accel_g: gVal,
+          speed_kmh: speedKmh,
+          device_id: 'smartphone_dashcam_live',
+          corridor_id: 'blr_outer_ring_road',
+        }),
+      });
+    } catch (e) {}
+
+    setTimeout(() => {
+      setZAccelG(1.02);
+    }, 1200);
+  };
+
+  const setManualSpeed = (spd: number) => {
+    setSpeedKmh(spd);
+    bcRef.current?.postMessage({
+      speed_kmh: spd,
+      z_accel_g: zAccelG,
+      road_curve: roadCurve,
+      hazards: activeHazards,
+      fps,
+    });
+  };
+
+  const setManualCurve = (curve: string) => {
+    setRoadCurve(curve);
+    bcRef.current?.postMessage({
+      speed_kmh: speedKmh,
+      z_accel_g: zAccelG,
+      road_curve: curve,
+      hazards: activeHazards,
+      fps,
+    });
+  };
+
+  const triggerAnimalHazard = () => {
+    const animalHz: HazardBox = {
+      hazard_type: 'ANIMAL_COW',
+      bbox: [120, 100, 240, 220],
+      risk_level: 'HIGH',
+      confidence: 0.94,
+      distance_m: 65,
+    };
+    setActiveHazards([animalHz]);
+    triggerAudioAndHaptic('ANIMAL_COW', 'HIGH');
+    bcRef.current?.postMessage({
+      speed_kmh: speedKmh,
+      z_accel_g: zAccelG,
+      road_curve: roadCurve,
+      hazards: [animalHz],
+      fps,
+    });
+  };
 
   // 4. Render Sleek Automotive Augmented Reality HUD Overlay
   const renderHudOverlay = (hazards: HazardBox[], vw: number, vh: number) => {
@@ -369,25 +525,65 @@ export const SmartphoneDashcam: React.FC = () => {
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#1E293B]/80 border border-slate-700 backdrop-blur-md">
             <span className="w-2.5 h-2.5 rounded-full bg-[#EA4335] animate-ping"></span>
             <span className="text-xs font-bold text-white tracking-wider uppercase">
-              Smartphone Road Cam
+              {videoSource === 'camera' ? 'Phone Rear Cam' : 'Road Driving Stream'}
             </span>
           </div>
 
           <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded bg-[#090D16]/80 border border-[#1E293B] text-[11px] text-[#34A853]">
             <Radio className="w-3.5 h-3.5 animate-pulse" />
-            <span>Relay Sync: {roundtripLatency}ms</span>
+            <span>Sync: {roundtripLatency}ms</span>
           </div>
         </div>
 
-        {/* Quick Actions */}
+        {/* Video Source Switcher & Quick Actions */}
         <div className="flex items-center gap-2">
-          <button
-            onClick={toggleFacingMode}
-            className="p-2 rounded-lg bg-[#1E293B]/80 border border-slate-700 text-slate-300 hover:text-white"
-            title="Switch Rear/Front Camera"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
+          {/* Source switch */}
+          <div className="flex items-center bg-[#1E293B]/80 border border-slate-700 rounded-lg p-0.5 text-xs">
+            <button
+              onClick={() => setVideoSource('camera')}
+              className={`px-2 py-1 rounded font-medium transition-all ${
+                videoSource === 'camera' ? 'bg-[#4285F4] text-white' : 'text-slate-300 hover:text-white'
+              }`}
+              title="Use Phone Hardware Camera"
+            >
+              📱 Camera
+            </button>
+            <button
+              onClick={() => setVideoSource('sample_video')}
+              className={`px-2 py-1 rounded font-medium transition-all ${
+                videoSource === 'sample_video' ? 'bg-[#4285F4] text-white' : 'text-slate-300 hover:text-white'
+              }`}
+              title="Use Pre-recorded Driving Video"
+            >
+              🛣️ Driving Loop
+            </button>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className={`px-2 py-1 rounded font-medium transition-all ${
+                videoSource === 'custom_file' ? 'bg-[#4285F4] text-white' : 'text-slate-300 hover:text-white'
+              }`}
+              title="Upload Custom Dashcam File"
+            >
+              📁 File
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="video/*"
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+          </div>
+
+          {videoSource === 'camera' && (
+            <button
+              onClick={toggleFacingMode}
+              className="p-2 rounded-lg bg-[#1E293B]/80 border border-slate-700 text-slate-300 hover:text-white"
+              title="Switch Rear/Front Camera"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
+          )}
 
           <button
             onClick={() => setAudioEnabled(!audioEnabled)}
@@ -399,18 +595,6 @@ export const SmartphoneDashcam: React.FC = () => {
             title="Toggle Voice Alerts"
           >
             {audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-          </button>
-
-          <button
-            onClick={() => setNightMode(!nightMode)}
-            className={`p-2 rounded-lg border ${
-              nightMode
-                ? 'bg-[#FBBC05]/20 border-[#FBBC05] text-[#FBBC05]'
-                : 'bg-[#1E293B]/80 border-slate-700 text-slate-400'
-            }`}
-            title="Night OLED HUD Mode"
-          >
-            {nightMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
 
           <button
@@ -447,9 +631,22 @@ export const SmartphoneDashcam: React.FC = () => {
           </div>
         </div>
 
+        {/* Source Notice Banner */}
+        {sourceNotice && (
+          <div className="absolute top-16 left-4 right-4 z-20 bg-[#1E293B]/90 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs flex items-center justify-between backdrop-blur-md">
+            <span>{sourceNotice}</span>
+            <button
+              onClick={() => setSourceNotice(null)}
+              className="text-slate-400 hover:text-white ml-2"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* Critical Alert Flashing Banner */}
         {criticalAlert && (
-          <div className="absolute top-16 left-4 right-4 z-30 bg-[#EA4335]/90 border-2 border-white text-white p-3 rounded-lg shadow-2xl backdrop-blur-md flex items-center justify-between animate-bounce">
+          <div className="absolute top-28 left-4 right-4 z-30 bg-[#EA4335]/90 border-2 border-white text-white p-3 rounded-lg shadow-2xl backdrop-blur-md flex items-center justify-between animate-bounce">
             <div className="flex items-center gap-3">
               <AlertTriangle className="w-6 h-6 animate-pulse" />
               <div>
@@ -465,7 +662,62 @@ export const SmartphoneDashcam: React.FC = () => {
       </div>
 
       {/* Bottom Automotive HUD Telemetry Bar */}
-      <div className="absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-[#090D16] via-[#090D16]/80 to-transparent p-4 pb-6 backdrop-blur-sm pointer-events-auto">
+      <div className="absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-[#090D16] via-[#090D16]/90 to-transparent p-3 sm:p-4 pb-5 backdrop-blur-sm pointer-events-auto">
+        {/* Interactive Kinetic Road Movement Triggers */}
+        <div className="max-w-4xl mx-auto mb-2.5 flex flex-wrap items-center justify-center gap-1.5 sm:gap-2">
+          {/* Pothole Bump Spike Button */}
+          <button
+            onClick={() => triggerBumpSim(2.4)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#EA4335]/20 border border-[#EA4335] text-[#EA4335] hover:bg-[#EA4335]/30 rounded-lg text-xs font-bold transition-all active:scale-95 shadow-lg"
+          >
+            <Zap className="w-3.5 h-3.5" />
+            💥 Bump Shockwave (2.4G)
+          </button>
+
+          {/* Speed Selectors */}
+          <div className="flex items-center gap-1 bg-[#090D16]/90 rounded-lg p-0.5 border border-[#1E293B]">
+            <span className="text-[10px] text-slate-400 px-1.5">Speed:</span>
+            {[35, 65, 95].map((s) => (
+              <button
+                key={s}
+                onClick={() => setManualSpeed(s)}
+                className={`px-2 py-0.5 rounded text-xs font-bold transition-all ${
+                  speedKmh === s ? 'bg-[#4285F4] text-white' : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                {s}k
+              </button>
+            ))}
+          </div>
+
+          {/* Steering / Curvature Selectors */}
+          <div className="flex items-center gap-1 bg-[#090D16]/90 rounded-lg p-0.5 border border-[#1E293B]">
+            <span className="text-[10px] text-slate-400 px-1.5">Steer:</span>
+            {[
+              { l: '↰ Left', c: 'SHARP_LEFT' },
+              { l: '⬆️ Ahead', c: 'STRAIGHT' },
+              { l: '↱ Right', c: 'SHARP_RIGHT' },
+            ].map((item) => (
+              <button
+                key={item.c}
+                onClick={() => setManualCurve(item.c)}
+                className={`px-2 py-0.5 rounded text-xs font-bold transition-all ${
+                  roadCurve === item.c ? 'bg-[#FBBC05] text-slate-900' : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                {item.l}
+              </button>
+            ))}
+          </div>
+
+          {/* Cow / Animal Hazard */}
+          <button
+            onClick={triggerAnimalHazard}
+            className="flex items-center gap-1 px-2.5 py-1.5 bg-[#FBBC05]/20 border border-[#FBBC05] text-[#FBBC05] hover:bg-[#FBBC05]/30 rounded-lg text-xs font-bold transition-all active:scale-95"
+          >
+            🐄 Cow Ahead
+          </button>
+        </div>
         <div className="max-w-4xl mx-auto grid grid-cols-4 gap-2 sm:gap-4 text-center">
           {/* Speed */}
           <div className="bg-[#090D16]/90 border border-[#1E293B] rounded-lg p-2.5">
