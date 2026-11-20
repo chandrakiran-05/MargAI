@@ -16,8 +16,8 @@ export const HazardPictogram: React.FC<HazardPictogramProps> = ({
   className = '',
 }) => {
   const sizeClasses = {
-    sm: 'w-10 h-10',
-    md: 'w-16 h-16',
+    sm: 'w-12 h-12',
+    md: 'w-18 h-18',
     lg: 'w-24 h-24',
     xl: 'w-32 h-32',
   }[size];
@@ -26,22 +26,66 @@ export const HazardPictogram: React.FC<HazardPictogramProps> = ({
     case 'pothole':
       return (
         <div className={`relative flex items-center justify-center ${sizeClasses} ${className}`}>
-          <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
-            {/* Warning Diamond / Rounded Shield */}
-            <rect x="5" y="5" width="90" height="90" rx="18" fill="#EF4444" />
-            <rect x="9" y="9" width="82" height="82" rx="14" fill="#7F1D1D" />
-            
-            {/* Road Surface Line */}
-            <path d="M15 55 L35 55 L40 75 L60 75 L65 55 L85 55" stroke="#FFFFFF" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-            
-            {/* Car Wheel falling into pothole */}
-            <circle cx="50" cy="52" r="14" fill="#F87171" stroke="#FFFFFF" strokeWidth="4" />
-            <circle cx="50" cy="52" r="6" fill="#FFFFFF" />
-            
-            {/* Shock impact waves */}
-            <path d="M38 38 L32 30" stroke="#FDE047" strokeWidth="4" strokeLinecap="round" />
-            <path d="M62 38 L68 30" stroke="#FDE047" strokeWidth="4" strokeLinecap="round" />
-            <path d="M50 32 L50 24" stroke="#FDE047" strokeWidth="4" strokeLinecap="round" />
+          <svg viewBox="0 0 120 120" className="w-full h-full drop-shadow-[0_0_25px_rgba(239,68,68,0.4)]">
+            <defs>
+              <linearGradient id="potholeBg" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#2A0B0E" />
+                <stop offset="50%" stopColor="#1A0709" />
+                <stop offset="100%" stopColor="#0E0305" />
+              </linearGradient>
+              <linearGradient id="potholeBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#F87171" />
+                <stop offset="50%" stopColor="#EF4444" />
+                <stop offset="100%" stopColor="#991B1B" />
+              </linearGradient>
+              <radialGradient id="potholeGlow" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stopColor="#EF4444" stopOpacity="0.3" />
+                <stop offset="100%" stopColor="#EF4444" stopOpacity="0" />
+              </radialGradient>
+            </defs>
+
+            {/* Glowing Backdrop */}
+            <circle cx="60" cy="60" r="54" fill="url(#potholeGlow)" />
+
+            {/* Premium Hexagonal Vehicle HUD Shield */}
+            <rect
+              x="10"
+              y="10"
+              width="100"
+              height="100"
+              rx="28"
+              fill="url(#potholeBg)"
+              stroke="url(#potholeBorder)"
+              strokeWidth="3.5"
+            />
+
+            {/* Road Cross-Section with Deep Asphalt Cavity */}
+            <path
+              d="M22 66 L42 66 C45 66, 46 88, 60 88 C74 88, 75 66, 78 66 L98 66"
+              stroke="#FCA5A5"
+              strokeWidth="5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              fill="none"
+            />
+            {/* Cavity Depth Shadow */}
+            <path
+              d="M44 70 C48 84, 72 84, 76 70"
+              stroke="#7F1D1D"
+              strokeWidth="4"
+              fill="none"
+              strokeLinecap="round"
+            />
+
+            {/* High-Tech Automotive Wheel in Cavity */}
+            <circle cx="60" cy="62" r="16" fill="#1C1917" stroke="#F87171" strokeWidth="4.5" />
+            <circle cx="60" cy="62" r="8" fill="#EF4444" />
+            <circle cx="60" cy="62" r="3" fill="#FFFFFF" />
+
+            {/* Dynamic Hazard Impact Laser Beams */}
+            <path d="M46 44 L38 34" stroke="#FBBF24" strokeWidth="3.5" strokeLinecap="round" />
+            <path d="M74 44 L82 34" stroke="#FBBF24" strokeWidth="3.5" strokeLinecap="round" />
+            <path d="M60 36 L60 24" stroke="#FBBF24" strokeWidth="4" strokeLinecap="round" />
           </svg>
         </div>
       );
@@ -49,61 +93,59 @@ export const HazardPictogram: React.FC<HazardPictogramProps> = ({
     case 'cattle':
       return (
         <div className={`relative flex items-center justify-center ${sizeClasses} ${className}`}>
-          <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
-            {/* Warning Shield */}
-            <rect x="5" y="5" width="90" height="90" rx="18" fill="#EF4444" />
-            <rect x="9" y="9" width="82" height="82" rx="14" fill="#7F1D1D" />
-            
-            {/* Indian Cow / Cattle silhouette */}
-            <g fill="#FFFFFF">
-              {/* Horns */}
-              <path d="M32 30 C30 20, 24 18, 20 22 C22 25, 26 28, 30 33 Z" />
-              <path d="M68 30 C70 20, 76 18, 80 22 C78 25, 74 28, 70 33 Z" />
-              {/* Head */}
-              <ellipse cx="50" cy="42" rx="18" ry="16" />
-              {/* Muzzle / Snout */}
-              <ellipse cx="50" cy="54" rx="14" ry="10" fill="#FCA5A5" />
-              <circle cx="44" cy="54" r="2.5" fill="#7F1D1D" />
-              <circle cx="56" cy="54" r="2.5" fill="#7F1D1D" />
-              {/* Ears */}
-              <ellipse cx="26" cy="40" rx="7" ry="4" transform="rotate(-20 26 40)" />
-              <ellipse cx="74" cy="40" rx="7" ry="4" transform="rotate(20 74 40)" />
-              {/* Body */}
-              <rect x="35" y="58" width="30" height="28" rx="6" />
-              {/* Legs */}
-              <rect x="38" y="78" width="6" height="14" rx="2" />
-              <rect x="56" y="78" width="6" height="14" rx="2" />
-            </g>
-          </svg>
-        </div>
-      );
+          <svg viewBox="0 0 120 120" className="w-full h-full drop-shadow-[0_0_25px_rgba(245,158,11,0.4)]">
+            <defs>
+              <linearGradient id="cattleBg" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#291605" />
+                <stop offset="50%" stopColor="#180C03" />
+                <stop offset="100%" stopColor="#0B0501" />
+              </linearGradient>
+              <linearGradient id="cattleBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#FBBF24" />
+                <stop offset="50%" stopColor="#F59E0B" />
+                <stop offset="100%" stopColor="#B45309" />
+              </linearGradient>
+              <radialGradient id="cattleGlow" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stopColor="#F59E0B" stopOpacity="0.3" />
+                <stop offset="100%" stopColor="#F59E0B" stopOpacity="0" />
+              </radialGradient>
+            </defs>
 
-    case 'pedestrian':
-      return (
-        <div className={`relative flex items-center justify-center ${sizeClasses} ${className}`}>
-          <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
-            {/* Amber Warning Shield */}
-            <rect x="5" y="5" width="90" height="90" rx="18" fill="#F59E0B" />
-            <rect x="9" y="9" width="82" height="82" rx="14" fill="#78350F" />
-            
-            {/* Walking Person Stencil */}
-            <g fill="#FFFFFF">
+            <circle cx="60" cy="60" r="54" fill="url(#cattleGlow)" />
+
+            <rect
+              x="10"
+              y="10"
+              width="100"
+              height="100"
+              rx="28"
+              fill="url(#cattleBg)"
+              stroke="url(#cattleBorder)"
+              strokeWidth="3.5"
+            />
+
+            {/* Stylized Modern Cattle Silhouette */}
+            <g fill="#FDE68A">
+              {/* Horns */}
+              <path d="M38 36 C34 22, 26 20, 22 24 C25 28, 30 32, 36 38 Z" fill="#FBBF24" />
+              <path d="M82 36 C86 22, 94 20, 98 24 C95 28, 90 32, 84 38 Z" fill="#FBBF24" />
               {/* Head */}
-              <circle cx="52" cy="26" r="8" />
+              <ellipse cx="60" cy="50" rx="20" ry="17" fill="#FFFBEB" />
+              {/* Muzzle */}
+              <ellipse cx="60" cy="64" rx="16" ry="11" fill="#FBBF24" />
+              <circle cx="53" cy="64" r="3" fill="#451A03" />
+              <circle cx="67" cy="64" r="3" fill="#451A03" />
+              {/* Eyes */}
+              <circle cx="50" cy="46" r="3" fill="#78350F" />
+              <circle cx="70" cy="46" r="3" fill="#78350F" />
+              {/* Ears */}
+              <ellipse cx="34" cy="48" rx="8" ry="4.5" transform="rotate(-20 34 48)" fill="#FDE68A" />
+              <ellipse cx="86" cy="48" rx="8" ry="4.5" transform="rotate(20 86 48)" fill="#FDE68A" />
               {/* Body */}
-              <path d="M48 36 L58 36 L54 58 L46 58 Z" />
-              {/* Left arm */}
-              <line x1="50" y1="38" x2="38" y2="48" stroke="#FFFFFF" strokeWidth="5" strokeLinecap="round" />
-              {/* Right arm */}
-              <line x1="56" y1="38" x2="66" y2="46" stroke="#FFFFFF" strokeWidth="5" strokeLinecap="round" />
-              {/* Legs */}
-              <line x1="48" y1="56" x2="36" y2="78" stroke="#FFFFFF" strokeWidth="6" strokeLinecap="round" />
-              <line x1="53" y1="56" x2="66" y2="78" stroke="#FFFFFF" strokeWidth="6" strokeLinecap="round" />
+              <rect x="42" y="70" width="36" height="26" rx="8" fill="#FDE68A" />
+              <rect x="46" y="90" width="8" height="15" rx="3" fill="#F59E0B" />
+              <rect x="66" y="90" width="8" height="15" rx="3" fill="#F59E0B" />
             </g>
-            {/* Crosswalk Zebra lines */}
-            <line x1="22" y1="84" x2="38" y2="84" stroke="#FDE68A" strokeWidth="4" strokeLinecap="round" />
-            <line x1="44" y1="84" x2="60" y2="84" stroke="#FDE68A" strokeWidth="4" strokeLinecap="round" />
-            <line x1="66" y1="84" x2="82" y2="84" stroke="#FDE68A" strokeWidth="4" strokeLinecap="round" />
           </svg>
         </div>
       );
@@ -111,29 +153,98 @@ export const HazardPictogram: React.FC<HazardPictogramProps> = ({
     case 'sharp_curve':
       return (
         <div className={`relative flex items-center justify-center ${sizeClasses} ${className}`}>
-          <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
-            {/* Amber Warning Shield */}
-            <rect x="5" y="5" width="90" height="90" rx="18" fill="#F59E0B" />
-            <rect x="9" y="9" width="82" height="82" rx="14" fill="#78350F" />
-            
-            {/* Turn Arrow */}
+          <svg viewBox="0 0 120 120" className="w-full h-full drop-shadow-[0_0_25px_rgba(139,92,246,0.4)]">
+            <defs>
+              <linearGradient id="curveBg" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#200B3B" />
+                <stop offset="50%" stopColor="#120624" />
+                <stop offset="100%" stopColor="#080212" />
+              </linearGradient>
+              <linearGradient id="curveBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#C084FC" />
+                <stop offset="50%" stopColor="#A855F7" />
+                <stop offset="100%" stopColor="#6B21A8" />
+              </linearGradient>
+              <radialGradient id="curveGlow" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stopColor="#A855F7" stopOpacity="0.3" />
+                <stop offset="100%" stopColor="#A855F7" stopOpacity="0" />
+              </radialGradient>
+            </defs>
+
+            <circle cx="60" cy="60" r="54" fill="url(#curveGlow)" />
+
+            <rect
+              x="10"
+              y="10"
+              width="100"
+              height="100"
+              rx="28"
+              fill="url(#curveBg)"
+              stroke="url(#curveBorder)"
+              strokeWidth="3.5"
+            />
+
+            {/* Aerodynamic High-Tech Velocity Curve Arrow */}
             {turnDirection === 'right' ? (
-              <g stroke="#FFFFFF" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" fill="none">
-                <path d="M35 78 L35 52 C35 34, 50 34, 65 34" />
-                <path d="M52 22 L68 34 L52 46" strokeWidth="8" fill="none" />
+              <g stroke="#E9D5FF" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" fill="none">
+                <path d="M42 92 L42 58 C42 40, 56 40, 75 40" />
+                <path d="M62 26 L80 40 L62 54" strokeWidth="8" fill="none" />
               </g>
             ) : (
-              <g stroke="#FFFFFF" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" fill="none">
-                <path d="M65 78 L65 52 C65 34, 50 34, 35 34" />
-                <path d="M48 22 L32 34 L48 46" strokeWidth="8" fill="none" />
+              <g stroke="#E9D5FF" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" fill="none">
+                <path d="M78 92 L78 58 C78 40, 64 40, 45 40" />
+                <path d="M58 26 L40 40 L58 54" strokeWidth="8" fill="none" />
               </g>
             )}
-            
-            {/* Safe Speed Badge */}
-            <circle cx="72" cy="72" r="14" fill="#EF4444" stroke="#FFFFFF" strokeWidth="2" />
-            <text x="72" y="76" fill="#FFFFFF" fontSize="11" fontWeight="bold" textAnchor="middle" fontFamily="sans-serif">
+
+            {/* Glowing Speed Disc */}
+            <circle cx="85" cy="85" r="16" fill="#DC2626" stroke="#FFFFFF" strokeWidth="2.5" />
+            <text x="85" y="90" fill="#FFFFFF" fontSize="13" fontWeight="900" textAnchor="middle" fontFamily="sans-serif">
               35
             </text>
+          </svg>
+        </div>
+      );
+
+    case 'pedestrian':
+      return (
+        <div className={`relative flex items-center justify-center ${sizeClasses} ${className}`}>
+          <svg viewBox="0 0 120 120" className="w-full h-full drop-shadow-[0_0_25px_rgba(245,158,11,0.4)]">
+            <defs>
+              <linearGradient id="pedBg" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#251605" />
+                <stop offset="50%" stopColor="#150C03" />
+                <stop offset="100%" stopColor="#0A0601" />
+              </linearGradient>
+              <linearGradient id="pedBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#FBBF24" />
+                <stop offset="50%" stopColor="#F59E0B" />
+                <stop offset="100%" stopColor="#B45309" />
+              </linearGradient>
+            </defs>
+
+            <rect
+              x="10"
+              y="10"
+              width="100"
+              height="100"
+              rx="28"
+              fill="url(#pedBg)"
+              stroke="url(#pedBorder)"
+              strokeWidth="3.5"
+            />
+
+            <g fill="#FEF3C7">
+              <circle cx="62" cy="30" r="9" />
+              <path d="M58 42 L70 42 L65 66 L55 66 Z" />
+              <line x1="60" y1="44" x2="46" y2="56" stroke="#FEF3C7" strokeWidth="5.5" strokeLinecap="round" />
+              <line x1="68" y1="44" x2="80" y2="54" stroke="#FEF3C7" strokeWidth="5.5" strokeLinecap="round" />
+              <line x1="58" y1="64" x2="44" y2="90" stroke="#FEF3C7" strokeWidth="6.5" strokeLinecap="round" />
+              <line x1="64" y1="64" x2="78" y2="90" stroke="#FEF3C7" strokeWidth="6.5" strokeLinecap="round" />
+            </g>
+            <line x1="28" y1="96" x2="46" y2="96" stroke="#FBBF24" strokeWidth="4.5" strokeLinecap="round" />
+            <line x1="52" y1="96" x2="70" y2="96" stroke="#FBBF24" strokeWidth="4.5" strokeLinecap="round" />
+            <line x1="76" y1="96" x2="94" y2="96" stroke="#FBBF24" strokeWidth="4.5" strokeLinecap="round" />
           </svg>
         </div>
       );
@@ -141,20 +252,37 @@ export const HazardPictogram: React.FC<HazardPictogramProps> = ({
     case 'fog':
       return (
         <div className={`relative flex items-center justify-center ${sizeClasses} ${className}`}>
-          <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
-            {/* Purple/Blue Shield */}
-            <rect x="5" y="5" width="90" height="90" rx="18" fill="#8B5CF6" />
-            <rect x="9" y="9" width="82" height="82" rx="14" fill="#4C1D95" />
-            
-            {/* Headlights & Fog beams */}
-            <g stroke="#FFFFFF" strokeWidth="5" strokeLinecap="round">
-              <line x1="20" y1="40" x2="80" y2="40" stroke="#C4B5FD" />
-              <line x1="30" y1="52" x2="75" y2="52" stroke="#FFFFFF" />
-              <line x1="20" y1="64" x2="80" y2="64" stroke="#C4B5FD" />
-              <line x1="35" y1="76" x2="65" y2="76" stroke="#FFFFFF" />
+          <svg viewBox="0 0 120 120" className="w-full h-full drop-shadow-[0_0_25px_rgba(99,102,241,0.4)]">
+            <defs>
+              <linearGradient id="fogBg" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#141432" />
+                <stop offset="50%" stopColor="#0B0B1D" />
+                <stop offset="100%" stopColor="#050510" />
+              </linearGradient>
+              <linearGradient id="fogBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#818CF8" />
+                <stop offset="50%" stopColor="#6366F1" />
+                <stop offset="100%" stopColor="#3730A3" />
+              </linearGradient>
+            </defs>
+
+            <rect
+              x="10"
+              y="10"
+              width="100"
+              height="100"
+              rx="28"
+              fill="url(#fogBg)"
+              stroke="url(#fogBorder)"
+              strokeWidth="3.5"
+            />
+
+            <g stroke="#C7D2FE" strokeWidth="6" strokeLinecap="round">
+              <line x1="26" y1="46" x2="94" y2="46" stroke="#A5B4FC" />
+              <line x1="36" y1="60" x2="88" y2="60" stroke="#E0E7FF" />
+              <line x1="26" y1="74" x2="94" y2="74" stroke="#A5B4FC" />
+              <line x1="42" y1="88" x2="78" y2="88" stroke="#E0E7FF" />
             </g>
-            {/* Car Silhouette in fog */}
-            <path d="M38 32 L44 22 L56 22 L62 32 Z" fill="#DDD6FE" />
           </svg>
         </div>
       );
@@ -163,13 +291,46 @@ export const HazardPictogram: React.FC<HazardPictogramProps> = ({
     default:
       return (
         <div className={`relative flex items-center justify-center ${sizeClasses} ${className}`}>
-          <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
-            {/* Green Road Shield */}
-            <rect x="5" y="5" width="90" height="90" rx="18" fill="#10B981" />
-            <rect x="9" y="9" width="82" height="82" rx="14" fill="#064E3B" />
-            
-            {/* Big Checkmark */}
-            <path d="M28 50 L42 66 L72 32" stroke="#FFFFFF" strokeWidth="9" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+          <svg viewBox="0 0 120 120" className="w-full h-full drop-shadow-[0_0_25px_rgba(16,185,129,0.35)]">
+            <defs>
+              <linearGradient id="safeBg" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#07271E" />
+                <stop offset="50%" stopColor="#041813" />
+                <stop offset="100%" stopColor="#020E0A" />
+              </linearGradient>
+              <linearGradient id="safeBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#34D399" />
+                <stop offset="50%" stopColor="#10B981" />
+                <stop offset="100%" stopColor="#047857" />
+              </linearGradient>
+              <radialGradient id="safeGlow" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stopColor="#10B981" stopOpacity="0.25" />
+                <stop offset="100%" stopColor="#10B981" stopOpacity="0" />
+              </radialGradient>
+            </defs>
+
+            <circle cx="60" cy="60" r="54" fill="url(#safeGlow)" />
+
+            <rect
+              x="10"
+              y="10"
+              width="100"
+              height="100"
+              rx="28"
+              fill="url(#safeBg)"
+              stroke="url(#safeBorder)"
+              strokeWidth="3.5"
+            />
+
+            {/* Glowing Emerald Checkmark */}
+            <path
+              d="M34 60 L50 78 L86 38"
+              stroke="#6EE7B7"
+              strokeWidth="9"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              fill="none"
+            />
           </svg>
         </div>
       );
