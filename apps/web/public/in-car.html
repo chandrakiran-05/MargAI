@@ -176,7 +176,7 @@ function drawMap(){var n=performance.now(),dt=Math.min(.1,(n-(lt||n))/1000);lt=n
 var phoneSync = true;
 var lastBumpTime = 0;
 function pollSmartphoneMovement() {
-  if (!phoneSync) return;
+  if (!phoneSync || (ws && ws.readyState === 1)) return;
   fetch('/api/smartphone/status')
     .then(function(r){ return r.json(); })
     .then(function(d){

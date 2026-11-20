@@ -74,6 +74,7 @@ export const SmartphoneDashcam: React.FC = () => {
   const streamLoopRef = useRef<number | null>(null);
   const isProcessingRef = useRef<boolean>(false);
   const lastAlertTimeRef = useRef<number>(0);
+  const lastAiDetectTimeRef = useRef<number>(0);
   const bcRef = useRef<BroadcastChannel | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -288,7 +289,7 @@ export const SmartphoneDashcam: React.FC = () => {
     let intervalId: any;
 
     const captureAndSendFrame = async () => {
-      if (!videoRef.current || !canvasRef.current || isProcessingRef.current) return;
+      if (!videoRef.current || !canvasRef.current) return;
       if (videoRef.current.readyState < 2) return;
 
       const video = videoRef.current;
@@ -301,72 +302,89 @@ export const SmartphoneDashcam: React.FC = () => {
       ctx.drawImage(video, 0, 0, 240, 135);
 
       // Compress to ultra-lightweight JPEG (~4KB for instantaneous transmission)
-      const b64 = canvas.toDataURL('image/jpeg', 0.42);
-      isProcessingRef.current = true;
-      const t0 = performance.now();
+      const b64 = canvas.toDataURL('image/jpeg', 0.40);
 
-      try {
-        const res = await fetch('/api/smartphone/frame', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            image_base64: b64,
-            latitude: gpsCoords?.lat || 12.9716,
-            longitude: gpsCoords?.lng || 77.5946,
-            altitude: 915.2,
-            z_accel_g: zAccelG,
+      // 1. Instant Direct WebSocket Video Stream to In-Car Display (<0.5ms push)
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({
+            frame_base64: b64,
             speed_kmh: speedKmh,
-            device_id: 'smartphone_dashcam_live',
-            corridor_id: 'blr_outer_ring_road',
-          }),
-        });
+            z_accel_g: zAccelG,
+            road_curve: roadCurve,
+          })
+        );
+      }
 
-        if (res.ok) {
-          const data = await res.json();
-          const latency = Math.round(performance.now() - t0);
-          setRoundtripLatency(latency);
+      // 2. Instant Local BroadcastChannel (<0.1ms)
+      bcRef.current?.postMessage({
+        speed_kmh: speedKmh,
+        z_accel_g: zAccelG,
+        road_curve: roadCurve,
+        camera_b64: b64,
+        hazards: activeHazards,
+        fps,
+      });
 
-          if (data.hazards) {
-            setActiveHazards(data.hazards);
-            renderHudOverlay(data.hazards, video.videoWidth || 640, video.videoHeight || 360);
+      // 3. AI Perception Loop (Non-blocking, throttled to 6 FPS to prevent network/mobile queueing)
+      const now = performance.now();
+      if (!isProcessingRef.current && now - lastAiDetectTimeRef.current >= 160) {
+        lastAiDetectTimeRef.current = now;
+        isProcessingRef.current = true;
+        const t0 = performance.now();
 
-            // Check for critical / high alerts
-            const crit = data.hazards.find((h: any) => h.risk_level === 'CRITICAL' || h.risk_level === 'HIGH');
-            if (crit) {
-              setCriticalAlert(`${crit.hazard_type}: ${crit.risk_level} RISK`);
-              triggerAudioAndHaptic(crit.hazard_type, crit.risk_level);
-            } else {
-              setCriticalAlert(null);
+        try {
+          const res = await fetch('/api/smartphone/frame', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              image_base64: b64,
+              latitude: gpsCoords?.lat || 12.9716,
+              longitude: gpsCoords?.lng || 77.5946,
+              altitude: 915.2,
+              z_accel_g: zAccelG,
+              speed_kmh: speedKmh,
+              device_id: 'smartphone_dashcam_live',
+              corridor_id: 'blr_outer_ring_road',
+            }),
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            const latency = Math.round(performance.now() - t0);
+            setRoundtripLatency(latency);
+
+            if (data.hazards) {
+              setActiveHazards(data.hazards);
+              renderHudOverlay(data.hazards, video.videoWidth || 640, video.videoHeight || 360);
+
+              // Check for critical / high alerts
+              const crit = data.hazards.find((h: any) => h.risk_level === 'CRITICAL' || h.risk_level === 'HIGH');
+              if (crit) {
+                setCriticalAlert(`${crit.hazard_type}: ${crit.risk_level} RISK`);
+                triggerAudioAndHaptic(crit.hazard_type, crit.risk_level);
+              } else {
+                setCriticalAlert(null);
+              }
+            }
+
+            if (data.telemetry?.road_geometry) {
+              setRoadCurve(data.telemetry.road_geometry.curve_type || 'STRAIGHT');
+            }
+            if (data.fps) {
+              setFps(data.fps);
             }
           }
-
-          if (data.telemetry?.road_geometry) {
-            setRoadCurve(data.telemetry.road_geometry.curve_type || 'STRAIGHT');
-          }
-          if (data.fps) {
-            setFps(data.fps);
-          }
-
-          // Zero-Latency Local Broadcast to MargAI In-Car Display
-          bcRef.current?.postMessage({
-            speed_kmh: speedKmh,
-            z_accel_g: zAccelG,
-            road_curve: data.telemetry?.road_geometry?.curve_type || roadCurve,
-            camera_b64: b64,
-            hazards: data.hazards || [],
-            fps: data.fps || fps,
-          });
+        } catch (err) {
+          setRoundtripLatency(10);
+        } finally {
+          isProcessingRef.current = false;
         }
-      } catch (err) {
-        // Fallback simulation if backend unreachable
-        setRoundtripLatency(10);
-      } finally {
-        isProcessingRef.current = false;
       }
     };
 
-    // Run at ~11-12 FPS to maintain smooth feed while leaving full network headroom
-    intervalId = setInterval(captureAndSendFrame, 90);
+    // Run video capture at smooth 10 FPS (100ms)
+    intervalId = setInterval(captureAndSendFrame, 100);
     return () => clearInterval(intervalId);
   }, [cameraActive, gpsCoords, zAccelG, speedKmh, roadCurve]);
 

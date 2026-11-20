@@ -167,7 +167,15 @@ export const InCarDisplay: React.FC = () => {
   const mapDistanceRef = useRef<number>(0);
   const bumpsListRef = useRef<number[]>([]);
   const lastLoopTimeRef = useRef<number>(performance.now());
+  const lastHazardStateUpdateRef = useRef<number>(performance.now());
+  const vehicleSpeedRef = useRef<number>(55);
+  const pipImgRef = useRef<HTMLImageElement | null>(null);
+  const pipContainerRef = useRef<HTMLDivElement | null>(null);
   const toastTimerRef = useRef<any>(null);
+
+  useEffect(() => {
+    vehicleSpeedRef.current = vehicleSpeed;
+  }, [vehicleSpeed]);
 
   // Clock Update
   useEffect(() => {
@@ -209,9 +217,10 @@ export const InCarDisplay: React.FC = () => {
           }
         }
 
-        // D. Picture-in-Picture Camera Frame
+        // D. Picture-in-Picture Camera Frame (Direct DOM update - zero React re-render lag)
         if (msg.camera_b64) {
-          setPhoneCameraB64(msg.camera_b64);
+          if (pipImgRef.current) pipImgRef.current.src = msg.camera_b64;
+          if (pipContainerRef.current) pipContainerRef.current.style.display = 'block';
         }
 
         // E. Ingest Hazards
@@ -260,9 +269,10 @@ export const InCarDisplay: React.FC = () => {
         }
       }
 
-      // D. Picture-in-Picture Camera Frame
+      // D. Picture-in-Picture Camera Frame (Direct DOM update - zero React re-render lag)
       if (data.frame_base64) {
-        setPhoneCameraB64(data.frame_base64);
+        if (pipImgRef.current) pipImgRef.current.src = data.frame_base64;
+        if (pipContainerRef.current) pipContainerRef.current.style.display = 'block';
       }
 
       // E. Hazards Queue
@@ -422,47 +432,53 @@ export const InCarDisplay: React.FC = () => {
       lastLoopTimeRef.current = timestamp;
 
       // Speed in m/s
-      const speedMps = (vehicleSpeed * 1000) / 3600;
+      const speedMps = (vehicleSpeedRef.current * 1000) / 3600;
 
-      // Advance map odometer
+      // Advance map odometer smoothly
       mapDistanceRef.current = (mapDistanceRef.current + speedMps * 0.8 * dt) % 5000;
 
-      // Update hazards distance
-      setHazards((prevHazards) => {
-        const updated = prevHazards.map((h) => {
-          const newDist = h.distance - speedMps * dt;
-          let alerted = h.alerted;
+      // Throttle React state re-renders to every 120ms (8 FPS) instead of 60 FPS
+      if (timestamp - lastHazardStateUpdateRef.current >= 120) {
+        const stepDt = Math.min(0.3, (timestamp - lastHazardStateUpdateRef.current) / 1000);
+        lastHazardStateUpdateRef.current = timestamp;
 
-          // Trigger alert when hazard enters warning zone (< 200m)
-          if (!alerted && newDist <= 190 && !HAZARD_SPECS[h.key]?.quiet) {
-            alerted = true;
-            playChime(HAZARD_SPECS[h.key]?.lv || 2);
-            speakPhrase(h.key);
-          }
-          return { ...h, distance: newDist, alerted };
-        });
+        // Update hazards distance
+        setHazards((prevHazards) => {
+          const updated = prevHazards.map((h) => {
+            const newDist = h.distance - speedMps * stepDt;
+            let alerted = h.alerted;
 
-        // Filter passed hazards
-        return updated.filter((h) => {
-          if (h.distance <= 0) {
-            if (!HAZARD_SPECS[h.key]?.quiet) {
-              setNoteText({
-                text: `${HAZARD_SPECS[h.key]?.n} passed · Audit ticket queued`,
-                until: Date.now() + 3500,
-              });
+            // Trigger alert when hazard enters warning zone (< 200m)
+            if (!alerted && newDist <= 190 && !HAZARD_SPECS[h.key]?.quiet) {
+              alerted = true;
+              playChime(HAZARD_SPECS[h.key]?.lv || 2);
+              speakPhrase(h.key);
             }
-            return false;
-          }
-          return true;
+            return { ...h, distance: newDist, alerted };
+          });
+
+          // Filter passed hazards
+          return updated.filter((h) => {
+            if (h.distance <= 0) {
+              if (!HAZARD_SPECS[h.key]?.quiet) {
+                setNoteText({
+                  text: `${HAZARD_SPECS[h.key]?.n} passed · Audit ticket queued`,
+                  until: Date.now() + 3500,
+                });
+              }
+              return false;
+            }
+            return true;
+          });
         });
-      });
+      }
 
       animId = requestAnimationFrame(loop);
     };
 
     animId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(animId);
-  }, [vehicleSpeed, currentLang, muted]);
+  }, [currentLang, muted]);
 
   // Active Top Priority Hazard
   const activeHazardsList = hazards
@@ -896,19 +912,22 @@ export const InCarDisplay: React.FC = () => {
               </svg>
             )}
 
-            {/* Picture-in-Picture Live Rear Camera Feed from Smartphone */}
-            {phoneCameraB64 && (
-              <div className="absolute right-3 bottom-3 w-36 sm:w-44 aspect-video rounded-xl overflow-hidden border border-white/20 shadow-2xl z-20 bg-black">
-                <img
-                  src={phoneCameraB64}
-                  alt="Phone Camera Stream"
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute top-1 left-1.5 bg-black/80 px-1.5 py-0.5 rounded text-[9px] font-mono text-emerald-400">
-                  📱 Phone Cam
-                </div>
+            {/* Picture-in-Picture Live Rear Camera Feed from Smartphone (Direct DOM - Zero Lag) */}
+            <div
+              ref={pipContainerRef}
+              style={{ display: phoneCameraB64 ? 'block' : 'none' }}
+              className="absolute right-3 bottom-3 w-36 sm:w-44 aspect-video rounded-xl overflow-hidden border border-white/20 shadow-2xl z-20 bg-black"
+            >
+              <img
+                ref={pipImgRef}
+                src={phoneCameraB64 || ''}
+                alt="Phone Camera Stream"
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute top-1 left-1.5 bg-black/80 px-1.5 py-0.5 rounded text-[9px] font-mono text-emerald-400">
+                📱 Phone Cam
               </div>
-            )}
+            </div>
 
             {/* TOP HUD ALERT BANNER */}
             <div

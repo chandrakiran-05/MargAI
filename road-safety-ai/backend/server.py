@@ -255,7 +255,7 @@ async def process_smartphone_frame(payload: SmartphoneFramePayload):
         "status": "success",
         "hazards": hazards,
         "telemetry": telemetry,
-        "annotated_image": f"data:image/jpeg;base64,{annotated_b64}",
+        "annotated_image": None,
         "roundtrip_latency_ms": roundtrip_ms,
         "fps": current_fps
     }
