@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-11-20T08:35:26Z",
+  "architecture": "YOLO11n-Edge",
+  "precision": "INT8 (8-bit Quantized)",
+  "sourceModelMb": 10.36,
+  "quantizedModelMb": 3.12,
+  "reductionPercentage": 69.9,
+  "compressionRatio": 3.32,
+  "onnxRuntimeBenchmarkMs": {
+    "fp32MeanMs": 6.07,
+    "int8MeanMs": 9.35,
+    "int8P95Ms": 11.56,
+    "speedupFactor": 0.65
+  },
+  "mobileNpuTarget": "Google LiteRT / Android NNAPI / Qualcomm Hexagon DSP",
+  "thermalProfile": "Low-Heat Edge Operation (ADPF Thermal Mitigation Ready)"
+}
