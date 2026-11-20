@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -e
 
+# Ensure Google Cloud SDK is on PATH
+export PATH="/Users/purushothambalamurali/google-cloud-sdk/bin:$PATH"
+
 # ==============================================================================
 # MargAI - Google Startup Buildathon India 2026
 # Automated Google Cloud Run & Cloud Build Deployment Script
