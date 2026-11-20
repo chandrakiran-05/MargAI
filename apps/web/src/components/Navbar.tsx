@@ -28,20 +28,20 @@ export const Navbar: React.FC<NavbarProps> = ({
   isBackendConnected,
 }) => {
   return (
-    <header className="sticky top-0 z-50 bg-[#0B0F19]/90 backdrop-blur-md border-b border-slate-800/80 px-4 lg:px-8 py-3">
+    <header className="sticky top-0 z-50 bg-[#0B0F19]/95 backdrop-blur-md border-b border-slate-800 px-4 lg:px-8 py-3">
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
         {/* Brand & Buildathon Badge */}
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => onSelectTab('public')}>
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/25">
               <ShieldAlert className="w-5 h-5 text-white" />
             </div>
             <div>
               <div className="flex items-center gap-1.5">
-                <span className="text-xl font-bold tracking-tight bg-gradient-to-r from-white via-slate-100 to-blue-200 bg-clip-text text-transparent">
+                <span className="text-xl font-black tracking-tight text-white">
                   MargAI
                 </span>
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/30">
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
                   मर्ग · Road Safety
                 </span>
               </div>
@@ -50,91 +50,91 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           <div className="hidden sm:flex items-center gap-1.5 pl-3 border-l border-slate-800 text-xs text-slate-400">
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-            <span className="font-medium text-slate-300">Google Startup Buildathon 2026</span>
+            <span className="font-semibold text-slate-300">Google Startup Buildathon 2026</span>
           </div>
         </div>
 
-        {/* Navigation Tabs */}
-        <nav className="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-800 text-sm">
-          <button
-            onClick={() => onSelectTab('public')}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium transition-all ${
-              currentTab === 'public'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-            }`}
-          >
-            <Sparkles className="w-4 h-4" />
-            <span>Product Showcase</span>
-          </button>
-
+        {/* Navigation Tabs - Big, Tactile, High Contrast */}
+        <nav className="flex items-center gap-1 bg-slate-900 p-1.5 rounded-2xl border border-slate-800 text-xs sm:text-sm">
           <button
             onClick={() => onSelectTab('driver')}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium transition-all ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold transition-all ${
               currentTab === 'driver'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 ring-1 ring-blue-400'
+                : 'text-slate-300 hover:text-white hover:bg-slate-800'
             }`}
           >
-            <Car className="w-4 h-4" />
-            <span>Driver Companion</span>
-            <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.2 rounded font-mono">
-              Live
+            <Car className="w-4 h-4 text-emerald-400" />
+            <span>Driver Mode</span>
+            <span className="text-[10px] bg-emerald-500/30 text-emerald-300 px-1.5 py-0.5 rounded font-mono font-bold">
+              Easy
             </span>
           </button>
 
           <button
-            onClick={() => onSelectTab('civic')}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium transition-all ${
-              currentTab === 'civic'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            onClick={() => onSelectTab('public')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold transition-all ${
+              currentTab === 'public'
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 ring-1 ring-blue-400'
+                : 'text-slate-300 hover:text-white hover:bg-slate-800'
             }`}
           >
-            <FileCheck2 className="w-4 h-4" />
+            <Sparkles className="w-4 h-4" />
+            <span>Overview</span>
+          </button>
+
+          <button
+            onClick={() => onSelectTab('civic')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold transition-all ${
+              currentTab === 'civic'
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 ring-1 ring-blue-400'
+                : 'text-slate-300 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <FileCheck2 className="w-4 h-4 text-amber-400" />
             <span>Civic Portal</span>
           </button>
 
           <button
             onClick={() => onSelectTab('google-stack')}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium transition-all ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold transition-all ${
               currentTab === 'google-stack'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 ring-1 ring-blue-400'
+                : 'text-slate-300 hover:text-white hover:bg-slate-800'
             }`}
           >
-            <Cpu className="w-4 h-4" />
-            <span>Google Cloud Stack</span>
+            <Cpu className="w-4 h-4 text-purple-400" />
+            <span>Google Stack</span>
           </button>
         </nav>
 
-        {/* Right side controls: Language & Health */}
-        <div className="flex items-center gap-3">
+        {/* Right side controls */}
+        <div className="flex items-center gap-2.5">
           {/* Language Selector */}
-          <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 px-2.5 py-1.5 rounded-lg text-xs">
-            <Globe2 className="w-3.5 h-3.5 text-blue-400" />
+          <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl text-xs">
+            <Globe2 className="w-4 h-4 text-blue-400" />
             <select
               value={selectedLanguage}
               onChange={(e) => onSelectLanguage(e.target.value)}
-              className="bg-transparent text-slate-200 outline-none cursor-pointer text-xs font-medium"
+              className="bg-transparent text-slate-100 outline-none cursor-pointer font-bold text-xs"
             >
               {SUPPORTED_LANGUAGES.map((lang) => (
-                <option key={lang.code} value={lang.code} className="bg-slate-900 text-slate-200">
-                  {lang.nativeName} ({lang.name.split(' ')[0]})
+                <option key={lang.code} value={lang.code} className="bg-slate-900 text-slate-100">
+                  {lang.nativeName}
                 </option>
               ))}
             </select>
           </div>
 
           {/* Cloud Run WebSocket Status */}
-          <div className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-slate-900/80 border border-slate-800">
+          <div className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800">
             <Radio
               className={`w-3.5 h-3.5 ${
                 isBackendConnected ? 'text-emerald-400 animate-pulse' : 'text-amber-400'
               }`}
             />
             <span className="hidden sm:inline text-slate-300 font-mono text-[11px]">
-              {isBackendConnected ? 'Cloud Run: 28ms' : 'Connecting...'}
+              {isBackendConnected ? 'Relay: 24ms' : 'Connecting'}
             </span>
           </div>
         </div>

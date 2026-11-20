@@ -7,8 +7,9 @@ import { GoogleStackInspector } from './components/GoogleStackInspector';
 import { apiClient } from './services/apiClient';
 
 export const App: React.FC = () => {
-  const [currentTab, setCurrentTab] = useState<TabType>('public');
-  const [selectedLanguage, setSelectedLanguage] = useState<string>('en');
+  // Default to the intuitive, high-impact Driver Mode
+  const [currentTab, setCurrentTab] = useState<TabType>('driver');
+  const [selectedLanguage, setSelectedLanguage] = useState<string>('hi');
   const [isBackendConnected, setIsBackendConnected] = useState<boolean>(true);
 
   // Poll health status
@@ -30,7 +31,7 @@ export const App: React.FC = () => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#0A0E1A] text-slate-100 flex flex-col font-['Plus_Jakarta_Sans',sans-serif]">
+    <div className="min-h-screen bg-[#070B14] text-slate-100 flex flex-col font-['Plus_Jakarta_Sans',sans-serif]">
       {/* Top Sticky Navigation */}
       <Navbar
         currentTab={currentTab}
@@ -42,6 +43,10 @@ export const App: React.FC = () => {
 
       {/* Main Content Pane */}
       <main className="flex-1">
+        {currentTab === 'driver' && (
+          <DriverCompanion selectedLanguage={selectedLanguage} />
+        )}
+
         {currentTab === 'public' && (
           <PublicSite
             onNavigateTab={setCurrentTab}
@@ -49,27 +54,23 @@ export const App: React.FC = () => {
           />
         )}
 
-        {currentTab === 'driver' && (
-          <DriverCompanion selectedLanguage={selectedLanguage} />
-        )}
-
         {currentTab === 'civic' && <CivicDashboard />}
 
         {currentTab === 'google-stack' && <GoogleStackInspector />}
       </main>
 
-      {/* Modern Footer */}
-      <footer className="border-t border-slate-800/80 bg-[#070A12] py-8 px-4 lg:px-8 text-xs text-slate-400">
+      {/* Clean Accessible Footer */}
+      <footer className="border-t border-slate-800/80 bg-[#05080F] py-6 px-4 lg:px-8 text-xs text-slate-400">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-white tracking-wide">MargAI</span>
-            <span>— Smartphone-First Road Safety & Civic Intelligence</span>
+            <span className="font-extrabold text-white tracking-wide">MargAI</span>
+            <span className="text-slate-400">— High-Contrast Road Safety & Civic Intelligence</span>
           </div>
 
-          <div className="flex items-center gap-4 text-slate-500 font-mono">
-            <span>Google Startup Buildathon India 2026</span>
+          <div className="flex items-center gap-4 text-slate-400 font-mono text-[11px]">
+            <span className="text-emerald-400">✓ Low-Literacy Visual Guidance</span>
             <span>·</span>
-            <span>Bengaluru Grand Finale (2 Dec)</span>
+            <span>Google Startup Buildathon India 2026</span>
           </div>
         </div>
       </footer>
