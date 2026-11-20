@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Navbar, TabType } from './components/Navbar';
-import { PublicSite } from './components/PublicSite';
+import { CommandCenter } from './components/CommandCenter';
 import { DriverCompanion } from './components/DriverCompanion';
 import { CivicDashboard } from './components/CivicDashboard';
 import { GoogleStackInspector } from './components/GoogleStackInspector';
+import { PublicSite } from './components/PublicSite';
 import { apiClient } from './services/apiClient';
 
 export const App: React.FC = () => {
-  // Default to the intuitive, high-impact Driver Mode
-  const [currentTab, setCurrentTab] = useState<TabType>('driver');
+  // Default to the 3-Pane Command Center
+  const [currentTab, setCurrentTab] = useState<TabType>('command-center');
   const [selectedLanguage, setSelectedLanguage] = useState<string>('hi');
   const [isBackendConnected, setIsBackendConnected] = useState<boolean>(true);
 
@@ -31,7 +32,7 @@ export const App: React.FC = () => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#070B14] text-slate-100 flex flex-col font-['Plus_Jakarta_Sans',sans-serif]">
+    <div className="min-h-screen bg-[#090D16] text-slate-100 flex flex-col font-['Plus_Jakarta_Sans',sans-serif]">
       {/* Top Sticky Navigation */}
       <Navbar
         currentTab={currentTab}
@@ -43,9 +44,17 @@ export const App: React.FC = () => {
 
       {/* Main Content Pane */}
       <main className="flex-1">
+        {currentTab === 'command-center' && (
+          <CommandCenter selectedLanguage={selectedLanguage} />
+        )}
+
         {currentTab === 'driver' && (
           <DriverCompanion selectedLanguage={selectedLanguage} />
         )}
+
+        {currentTab === 'civic' && <CivicDashboard />}
+
+        {currentTab === 'google-stack' && <GoogleStackInspector />}
 
         {currentTab === 'public' && (
           <PublicSite
@@ -53,22 +62,20 @@ export const App: React.FC = () => {
             selectedLanguage={selectedLanguage}
           />
         )}
-
-        {currentTab === 'civic' && <CivicDashboard />}
-
-        {currentTab === 'google-stack' && <GoogleStackInspector />}
       </main>
 
-      {/* Clean Accessible Footer */}
-      <footer className="border-t border-slate-800/80 bg-[#05080F] py-6 px-4 lg:px-8 text-xs text-slate-400">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+      {/* Sleek Command Center Footer */}
+      <footer className="border-t border-[#1E293B] bg-[#07090F] py-4 px-4 lg:px-8 text-xs text-slate-400">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <span className="font-extrabold text-white tracking-wide">MargAI</span>
-            <span className="text-slate-400">— High-Contrast Road Safety & Civic Intelligence</span>
+            <span className="text-slate-400 font-mono text-[11px]">
+              — Automotive Command Center HUD & Civic Intelligence
+            </span>
           </div>
 
           <div className="flex items-center gap-4 text-slate-400 font-mono text-[11px]">
-            <span className="text-emerald-400">✓ Low-Literacy Visual Guidance</span>
+            <span className="text-cyan-400">✓ 3-Pane HUD Active</span>
             <span>·</span>
             <span>Google Startup Buildathon India 2026</span>
           </div>
