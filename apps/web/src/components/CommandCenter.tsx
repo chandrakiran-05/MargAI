@@ -752,14 +752,22 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
               <div className="p-3 bg-white rounded-xl shadow-lg">
                 <img
                   src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(
-                    'http://10.20.20.141:5173/?mode=smartphone'
+                    'https://10.20.20.141:5174/?mode=smartphone'
                   )}`}
                   alt="Smartphone Dashcam QR"
                   className="w-44 h-44"
                 />
               </div>
-              <p className="text-[11px] text-cyan-400 font-mono break-all font-bold">
-                http://10.20.20.141:5173/?mode=smartphone
+              <a
+                href="https://10.20.20.141:5174/?mode=smartphone"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[12px] text-cyan-400 font-mono break-all font-bold hover:underline"
+              >
+                https://10.20.20.141:5174/?mode=smartphone
+              </a>
+              <p className="text-[10px] text-slate-400 font-sans max-w-xs">
+                🔒 Secure HTTPS context unlocks your phone's hardware camera. Tap "Advanced &gt; Proceed" if prompted.
               </p>
             </div>
 

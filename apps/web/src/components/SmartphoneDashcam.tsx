@@ -180,10 +180,25 @@ export const SmartphoneDashcam: React.FC = () => {
         };
       }
     } catch (err) {
-      console.warn('Camera access error, switching to road driving video loop:', err);
-      // Seamlessly fallback to real-world road video loop so demo is never blocked!
-      setVideoSource('sample_video');
-      setSourceNotice('Camera unavailable over plain HTTP on LAN. Playing Road Driving Loop.');
+      console.warn('Camera access with ideal facingMode failed, retrying simple video constraints...', err);
+      try {
+        const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        streamRef.current = fallbackStream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = fallbackStream;
+          videoRef.current.onloadedmetadata = () => {
+            videoRef.current?.play();
+            setCameraActive(true);
+            setIsStreaming(true);
+            setSourceNotice('Smartphone Camera Active (Auto Fallback)');
+          };
+        }
+      } catch (fallbackErr) {
+        console.warn('Camera access error, switching to road driving video loop:', fallbackErr);
+        // Seamlessly fallback to real-world road video loop so demo is never blocked!
+        setVideoSource('sample_video');
+        setSourceNotice('Camera permission not granted. Open via HTTPS or tap Camera above to retry.');
+      }
     }
   };
 
