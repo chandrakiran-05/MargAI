@@ -7,4 +7,10 @@ dist/
 ml/runs/
 runs/
 yolo11n.pt
+__pycache__/
+*.pyc
+*.pyo
+apps/web/certs/
+*.db
+
 
