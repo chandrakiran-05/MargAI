@@ -9,9 +9,10 @@ import {
   Radio,
   SlidersHorizontal,
   Presentation,
+  Smartphone,
 } from 'lucide-react';
 
-export type TabType = 'command-center' | 'driver' | 'deck' | 'civic' | 'google-stack' | 'public';
+export type TabType = 'command-center' | 'in-car' | 'smartphone' | 'driver' | 'deck' | 'civic' | 'google-stack' | 'public';
 
 interface NavbarProps {
   currentTab: TabType;
@@ -75,6 +76,30 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
             <span>3-Pane HUD</span>
+          </button>
+
+          <button
+            onClick={() => onSelectTab('in-car')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
+              currentTab === 'in-car'
+                ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/60 font-bold shadow-lg shadow-cyan-500/20'
+                : 'text-slate-300 hover:text-white bg-[#1E293B]/40 border border-[#1E293B]'
+            }`}
+          >
+            <Car className="w-3.5 h-3.5 text-cyan-400" />
+            <span>🚗 In-Car HUD</span>
+          </button>
+
+          <button
+            onClick={() => onSelectTab('smartphone')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
+              currentTab === 'smartphone'
+                ? 'bg-[#EA4335]/20 text-[#EA4335] border border-[#EA4335]/60 font-bold shadow-lg shadow-[#EA4335]/20'
+                : 'text-slate-300 hover:text-white bg-[#1E293B]/40 border border-[#1E293B]'
+            }`}
+          >
+            <Smartphone className="w-3.5 h-3.5 text-[#EA4335] animate-pulse" />
+            <span>📱 Smartphone Cam</span>
           </button>
 
           <button

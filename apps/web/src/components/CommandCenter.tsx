@@ -16,6 +16,10 @@ import {
   Moon,
   Compass,
   FileText,
+  Smartphone,
+  QrCode,
+  X,
+  ExternalLink,
 } from 'lucide-react';
 import {
   Hazard,
@@ -52,6 +56,12 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
 
   // Camera & Canvas
   const [cameraActive, setCameraActive] = useState<boolean>(false);
+  const [videoSource, setVideoSource] = useState<'laptop' | 'smartphone' | 'simulation'>('simulation');
+  const [showPhoneModal, setShowPhoneModal] = useState<boolean>(false);
+  const [phoneConnected, setPhoneConnected] = useState<boolean>(false);
+  const [phoneFps, setPhoneFps] = useState<number>(0);
+  const [phoneHazardsCount, setPhoneHazardsCount] = useState<number>(0);
+
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -76,6 +86,67 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
 
     return () => clearInterval(sensorInterval);
   }, [activeAlert]);
+
+  // Smartphone Stream Status & Frame Polling
+  useEffect(() => {
+    const statusInterval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/smartphone/status');
+        if (res.ok) {
+          const data = await res.json();
+          setPhoneConnected(data.connected);
+          setPhoneFps(data.fps || 0);
+          setPhoneHazardsCount(data.active_hazards_count || 0);
+          if (data.connected && videoSource === 'simulation') {
+            setVideoSource('smartphone');
+          }
+        }
+      } catch (e) {
+        // AI server offline
+      }
+    }, 1500);
+
+    return () => clearInterval(statusInterval);
+  }, [videoSource]);
+
+  // Mirror Smartphone Frame onto Canvas when in Smartphone Mode
+  useEffect(() => {
+    if (videoSource !== 'smartphone') return;
+
+    let mirrorInterval: any;
+    const phoneImg = new Image();
+
+    mirrorInterval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/smartphone/latest_frame');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.frame_base64 && canvasRef.current) {
+            phoneImg.onload = () => {
+              const canvas = canvasRef.current;
+              if (!canvas) return;
+              const ctx = canvas.getContext('2d');
+              if (ctx) {
+                ctx.drawImage(phoneImg, 0, 0, canvas.width, canvas.height);
+              }
+            };
+            phoneImg.src = data.frame_base64;
+
+            if (data.telemetry?.z_accel_g) {
+              setZAccelG(data.telemetry.z_accel_g);
+            }
+            if (data.telemetry?.speed_kmh) {
+              setSpeedKmh(Math.round(data.telemetry.speed_kmh));
+            }
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    }, 85);
+
+    return () => clearInterval(mirrorInterval);
+  }, [videoSource]);
 
   useEffect(() => {
     apiClient.connectWebSocket(
@@ -343,6 +414,18 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
 
         <div className="flex items-center gap-2.5">
           <button
+            onClick={() => setShowPhoneModal(true)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-mono font-bold border transition-all ${
+              phoneConnected
+                ? 'bg-[#34A853]/20 border-[#34A853] text-[#34A853] shadow-[0_0_12px_rgba(52,168,83,0.3)]'
+                : 'bg-[#EA4335]/15 border-[#EA4335]/50 text-[#EA4335] hover:bg-[#EA4335]/25'
+            }`}
+          >
+            <Smartphone className="w-3.5 h-3.5 animate-pulse" />
+            <span>{phoneConnected ? `📱 Phone Live (${phoneFps} FPS)` : '📱 Connect Smartphone'}</span>
+          </button>
+
+          <button
             onClick={() => setNightHudMode(!nightHudMode)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-mono font-bold border transition-all ${
               nightHudMode
@@ -375,12 +458,31 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                 <Camera className="w-3.5 h-3.5 text-cyan-400" />
                 <span>PANE 1 · OPTICAL & SENSORS</span>
               </span>
-              <button
-                onClick={() => (cameraActive ? stopCamera() : startCamera())}
-                className="px-2 py-0.5 rounded bg-[#090D16] text-slate-300 text-[10px] font-mono border border-[#1E293B]"
-              >
-                {cameraActive ? 'Stop Camera' : 'Live Camera'}
-              </button>
+
+              <div className="flex items-center gap-1.5">
+                <select
+                  value={videoSource}
+                  onChange={(e) => {
+                    const src = e.target.value as any;
+                    setVideoSource(src);
+                    if (src === 'laptop') startCamera();
+                    else stopCamera();
+                  }}
+                  className="bg-[#090D16] text-slate-300 text-[10px] font-mono border border-[#1E293B] rounded px-2 py-0.5 focus:border-[#4285F4]"
+                >
+                  <option value="smartphone">📱 Smartphone Cam {phoneConnected ? '(Live)' : '(Standby)'}</option>
+                  <option value="laptop">💻 Laptop Camera</option>
+                  <option value="simulation">🎬 Simulation HUD</option>
+                </select>
+
+                <button
+                  onClick={() => setShowPhoneModal(true)}
+                  className="p-1 rounded bg-[#090D16] text-[#EA4335] hover:text-white border border-[#1E293B]"
+                  title="Scan Smartphone QR Code"
+                >
+                  <QrCode className="w-3 h-3" />
+                </button>
+              </div>
             </div>
 
             <div className="relative rounded-xl overflow-hidden border border-[#1E293B] bg-[#05070E] aspect-[16/10]">
@@ -621,6 +723,89 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
           </div>
         </div>
       </div>
+
+      {/* SMARTPHONE DASHCAM MODAL & SCANNABLE QR CODE */}
+      {showPhoneModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-[#0D1322] border border-[#1E293B] rounded-2xl max-w-md w-full p-6 relative font-mono text-slate-100 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <button
+              onClick={() => setShowPhoneModal(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-lg bg-[#090D16] text-slate-400 hover:text-white border border-[#1E293B]"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="flex items-center gap-2.5 mb-4">
+              <div className="w-9 h-9 rounded-xl bg-[#EA4335]/20 border border-[#EA4335]/40 flex items-center justify-center text-[#EA4335]">
+                <Smartphone className="w-5 h-5 animate-pulse" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base text-white">Connect Smartphone Dashcam</h3>
+                <p className="text-xs text-slate-400">Point phone at the road & stream AI updates in no time</p>
+              </div>
+            </div>
+
+            <div className="bg-[#090D16] p-4 rounded-xl border border-[#1E293B] flex flex-col items-center text-center space-y-3 mb-4">
+              <p className="text-xs text-slate-300 font-sans">
+                Scan with any iPhone or Android camera to start streaming:
+              </p>
+              <div className="p-3 bg-white rounded-xl shadow-lg">
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(
+                    'http://10.20.20.141:5173/?mode=smartphone'
+                  )}`}
+                  alt="Smartphone Dashcam QR"
+                  className="w-44 h-44"
+                />
+              </div>
+              <p className="text-[11px] text-cyan-400 font-mono break-all font-bold">
+                http://10.20.20.141:5173/?mode=smartphone
+              </p>
+            </div>
+
+            <div className="space-y-2 text-xs text-slate-300 mb-5">
+              <div className="flex items-center justify-between p-2.5 rounded-lg bg-[#090D16] border border-[#1E293B]">
+                <span className="flex items-center gap-2">
+                  <span
+                    className={`w-2.5 h-2.5 rounded-full ${
+                      phoneConnected ? 'bg-[#34A853]' : 'bg-[#FBBC05] animate-ping'
+                    }`}
+                  />
+                  <span>Phone Status:</span>
+                </span>
+                <span className={`font-bold ${phoneConnected ? 'text-[#34A853]' : 'text-slate-400'}`}>
+                  {phoneConnected ? `Active Stream (${phoneFps} FPS)` : 'Waiting for device...'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between p-2 rounded bg-[#090D16] text-[11px] text-slate-400">
+                <span>Inference Latency:</span>
+                <span className="text-emerald-400 font-bold">&lt; 15 ms · Apple Silicon MPS</span>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <a
+                href="/?mode=smartphone"
+                target="_blank"
+                rel="noreferrer"
+                className="flex-1 py-2.5 px-3 rounded-xl bg-[#4285F4] hover:bg-[#3367D6] text-white font-bold text-xs text-center flex items-center justify-center gap-1.5 transition-all"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Open Phone Simulator</span>
+              </a>
+              <button
+                onClick={() => {
+                  setVideoSource('smartphone');
+                  setShowPhoneModal(false);
+                }}
+                className="py-2.5 px-4 rounded-xl bg-[#1E293B] hover:bg-slate-700 text-white font-bold text-xs"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

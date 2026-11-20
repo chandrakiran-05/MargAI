@@ -6,11 +6,18 @@ import { BuildathonDeck } from './components/BuildathonDeck';
 import { CivicDashboard } from './components/CivicDashboard';
 import { GoogleStackInspector } from './components/GoogleStackInspector';
 import { PublicSite } from './components/PublicSite';
+import { SmartphoneDashcam } from './components/SmartphoneDashcam';
+import { InCarDisplay } from './components/InCarDisplay';
 import { apiClient } from './services/apiClient';
 
 export const App: React.FC = () => {
-  // Default to the 3-Pane Command Center
-  const [currentTab, setCurrentTab] = useState<TabType>('command-center');
+  // Check URL query parameters for direct tablet/phone mount
+  const search = typeof window !== 'undefined' ? window.location.search : '';
+  const isPhoneUrl = search.includes('smartphone') || search.includes('phone');
+  const isInCarUrl = search.includes('in-car') || search.includes('cockpit') || search.includes('infotainment');
+
+  const defaultTab: TabType = isPhoneUrl ? 'smartphone' : isInCarUrl ? 'in-car' : 'command-center';
+  const [currentTab, setCurrentTab] = useState<TabType>(defaultTab);
   const [selectedLanguage, setSelectedLanguage] = useState<string>('hi');
   const [isBackendConnected, setIsBackendConnected] = useState<boolean>(true);
 
@@ -47,6 +54,14 @@ export const App: React.FC = () => {
       <main className="flex-1">
         {currentTab === 'command-center' && (
           <CommandCenter selectedLanguage={selectedLanguage} />
+        )}
+
+        {currentTab === 'in-car' && (
+          <InCarDisplay />
+        )}
+
+        {currentTab === 'smartphone' && (
+          <SmartphoneDashcam />
         )}
 
         {currentTab === 'driver' && (

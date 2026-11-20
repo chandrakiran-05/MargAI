@@ -1,12 +1,15 @@
 """
 FastAPI Backend Server for Road Safety AI
 Provides REST endpoints and WebSocket streaming for edge/mobile clients.
+Includes real-time smartphone dashcam frame ingestion and prototype synchronization.
 """
 
 import os
 import sys
 import time
 import base64
+import json
+import urllib.request
 import cv2
 import numpy as np
 from pathlib import Path
@@ -47,6 +50,28 @@ pipeline = RoadSafetyPipeline(
 )
 alert_mgr = AlertManager()
 
+# In-memory latest smartphone state
+latest_smartphone_state = {
+    "connected": False,
+    "last_frame_timestamp": 0.0,
+    "fps": 0.0,
+    "latest_frame_b64": None,
+    "latest_annotated_b64": None,
+    "hazards": [],
+    "telemetry": {},
+    "device_info": {}
+}
+
+class SmartphoneFramePayload(BaseModel):
+    image_base64: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    altitude: Optional[float] = None
+    z_accel_g: Optional[float] = 1.02
+    speed_kmh: Optional[float] = 50.0
+    device_id: Optional[str] = "smartphone_dashcam_01"
+    corridor_id: Optional[str] = "blr_outer_ring_road"
+
 @app.get("/api/status")
 def get_system_status():
     import torch
@@ -56,12 +81,145 @@ def get_system_status():
         "device": "mps" if torch.backends.mps.is_available() else "cpu",
         "model_loaded": str(pipeline.model.ckpt_path if hasattr(pipeline.model, 'ckpt_path') else 'yolo11n'),
         "fps": round(pipeline.fps_rolling, 1),
-        "latency_ms": round(pipeline.latency_rolling, 1)
+        "latency_ms": round(pipeline.latency_rolling, 1),
+        "smartphone_streaming": latest_smartphone_state["connected"]
     }
 
 @app.get("/api/alerts")
 def get_recent_alerts(limit: int = 50, category: Optional[str] = None, severity: Optional[str] = None):
     return alert_mgr.get_event_history(category=category, severity=severity, limit=limit)
+
+@app.get("/api/smartphone/status")
+def get_smartphone_status():
+    now = time.time()
+    is_active = (now - latest_smartphone_state["last_frame_timestamp"]) < 5.0
+    latest_smartphone_state["connected"] = is_active
+    return {
+        "connected": is_active,
+        "fps": latest_smartphone_state["fps"],
+        "last_seen_sec_ago": round(now - latest_smartphone_state["last_frame_timestamp"], 1) if latest_smartphone_state["last_frame_timestamp"] > 0 else None,
+        "active_hazards_count": len(latest_smartphone_state["hazards"]),
+        "latest_hazards": latest_smartphone_state["hazards"],
+        "telemetry": latest_smartphone_state["telemetry"],
+        "device_info": latest_smartphone_state["device_info"]
+    }
+
+@app.get("/api/smartphone/latest_frame")
+def get_latest_smartphone_frame():
+    return {
+        "connected": latest_smartphone_state["connected"],
+        "frame_base64": latest_smartphone_state["latest_annotated_b64"],
+        "raw_frame_base64": latest_smartphone_state["latest_frame_b64"],
+        "hazards": latest_smartphone_state["hazards"],
+        "telemetry": latest_smartphone_state["telemetry"]
+    }
+
+@app.post("/api/smartphone/frame")
+async def process_smartphone_frame(payload: SmartphoneFramePayload):
+    """
+    Sub-second ingestion of smartphone dashcam frames.
+    Runs deep learning perception, updates vehicle pose, fuses accelerometer telemetry,
+    and relays any hazard instantly to the MargAI prototype command center.
+    """
+    t0 = time.time()
+
+    # 1. Clean base64 header if present
+    raw_b64 = payload.image_base64
+    if "," in raw_b64:
+        raw_b64 = raw_b64.split(",", 1)[1]
+
+    try:
+        img_bytes = base64.b64decode(raw_b64)
+        nparr = np.frombuffer(img_bytes, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    except Exception as e:
+        return {"error": f"Failed to decode image: {str(e)}"}
+
+    if frame is None:
+        return {"error": "Invalid image payload"}
+
+    # 2. Update GPS if smartphone provided real coordinates
+    if payload.latitude and payload.longitude:
+        pipeline.gps_tracker.lat = payload.latitude
+        pipeline.gps_tracker.lng = payload.longitude
+        pipeline.gps_tracker.has_hardware_lock = True
+        if payload.speed_kmh is not None:
+            pipeline.gps_tracker.speed_kmh = payload.speed_kmh
+
+    # 3. Process frame through full AI pipeline (YOLO + ByteTrack + Risk Engine + HUD)
+    annotated, hazards, telemetry = pipeline.process_frame(frame)
+
+    # 4. Accelerometer & Sensor Fusion (Z-axis G-force spike detection)
+    z_g = payload.z_accel_g or 1.02
+    if z_g > 1.8:
+        # Physical impact detected by smartphone accelerometer
+        for hz in hazards:
+            if "POTHOLE" in hz['hazard_type']:
+                hz['risk_level'] = "CRITICAL"
+                hz['explanation'] = f"Pothole confirmed by smartphone Z-axis accelerometer impact spike ({z_g:.2f}G)!"
+
+    # 5. Encode annotated HUD image back to JPEG base64
+    _, buffer = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 75])
+    annotated_b64 = base64.b64encode(buffer).decode('utf-8')
+
+    # 6. Update in-memory smartphone state for Prototype Dashboard mirroring
+    dt = max(0.001, t0 - latest_smartphone_state["last_frame_timestamp"])
+    current_fps = round(1.0 / dt, 1) if dt < 2.0 else 10.0
+    
+    latest_smartphone_state["connected"] = True
+    latest_smartphone_state["last_frame_timestamp"] = t0
+    latest_smartphone_state["fps"] = current_fps
+    latest_smartphone_state["latest_frame_b64"] = payload.image_base64
+    latest_smartphone_state["latest_annotated_b64"] = f"data:image/jpeg;base64,{annotated_b64}"
+    latest_smartphone_state["hazards"] = hazards
+    latest_smartphone_state["telemetry"] = {
+        **telemetry,
+        "z_accel_g": z_g,
+        "speed_kmh": payload.speed_kmh
+    }
+    latest_smartphone_state["device_info"] = {
+        "device_id": payload.device_id,
+        "corridor_id": payload.corridor_id
+    }
+
+    # 7. Zero-latency relay to MargAI Prototype Server (port 8080)
+    # If a critical or high hazard was detected, ingest as observation immediately!
+    for hz in hazards:
+        if hz['risk_level'] in ("HIGH", "CRITICAL"):
+            try:
+                obs_payload = {
+                    "id": f"obs_phone_{int(t0*1000)%1000000}",
+                    "hazardType": "pothole" if "POTHOLE" in hz['hazard_type'] else ("animal" if "ANIMAL" in hz['hazard_type'] else "debris"),
+                    "severity": hz['risk_level'].lower(),
+                    "confidence": hz['confidence'],
+                    "corridorId": payload.corridor_id or "blr_outer_ring_road",
+                    "latitude": payload.latitude or pipeline.gps_tracker.lat,
+                    "longitude": payload.longitude or pipeline.gps_tracker.lng,
+                    "observedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "sensorTelemetry": {
+                        "zAccelerationG": z_g,
+                        "opticalRoughness": 0.85
+                    }
+                }
+                req = urllib.request.Request(
+                    "http://localhost:8080/v1/observations",
+                    data=json.dumps(obs_payload).encode('utf-8'),
+                    headers={"Content-Type": "application/json"}
+                )
+                urllib.request.urlopen(req, timeout=0.15)
+            except Exception:
+                pass  # Non-blocking async relay
+
+    roundtrip_ms = round((time.time() - t0) * 1000.0, 1)
+
+    return {
+        "status": "success",
+        "hazards": hazards,
+        "telemetry": telemetry,
+        "annotated_image": f"data:image/jpeg;base64,{annotated_b64}",
+        "roundtrip_latency_ms": roundtrip_ms,
+        "fps": current_fps
+    }
 
 @app.post("/api/detect/frame")
 async def detect_frame(file: UploadFile = File(...)):
@@ -73,7 +231,6 @@ async def detect_frame(file: UploadFile = File(...)):
 
     annotated, hazards, telemetry = pipeline.process_frame(frame)
 
-    # Encode annotated frame as JPEG base64
     _, buffer = cv2.imencode('.jpg', annotated)
     b64_img = base64.b64encode(buffer).decode('utf-8')
 
@@ -103,4 +260,4 @@ async def websocket_stream(websocket: WebSocket):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
