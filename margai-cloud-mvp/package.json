@@ -1,0 +1,31 @@
+{
+  "name": "margai-cloud-mvp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MargAI - Real-Time Connected Vehicle Road Safety & Tesla MCU v12 HUD Infotainment",
+  "workspaces": [
+    "packages/*",
+    "services/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "dev:relay": "npm run dev -w services/relay-api",
+    "dev:web": "npm run dev -w apps/cockpit-web",
+    "dev": "npm run dev -w apps/cockpit-web",
+    "start:relay": "npm run start -w services/relay-api",
+    "lint": "echo 'Linting workspaces...'",
+    "deploy:cloud": "bash deploy.sh"
+  },
+  "keywords": [
+    "margai",
+    "google-cloud-run",
+    "automotive-infotainment",
+    "tesla-mcu",
+    "edge-ml",
+    "road-safety",
+    "litert"
+  ],
+  "author": "Google Startup Buildathon India 2026",
+  "license": "Apache-2.0"
+}

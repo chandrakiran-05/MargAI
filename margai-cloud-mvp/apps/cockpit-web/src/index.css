@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@keyframes flow {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -40;
+  }
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #0d0e10;
+  color: #f1f2f4;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
