@@ -5,14 +5,11 @@ import {
   Building2,
   CheckCircle2,
   Send,
-  Sparkles,
-  ExternalLink,
+  FileText,
   Clock,
   MapPin,
   Camera,
-  ScrollText,
   Activity,
-  Layers,
 } from 'lucide-react';
 import { CivicCase } from '@margai/contracts';
 import { apiClient } from '../services/apiClient';
@@ -20,7 +17,7 @@ import { apiClient } from '../services/apiClient';
 export const CivicDashboard: React.FC = () => {
   const [cases, setCases] = useState<CivicCase[]>([]);
   const [selectedCase, setSelectedCase] = useState<CivicCase | null>(null);
-  const [isGeneratingGemini, setIsGeneratingGemini] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeFilter, setActiveFilter] = useState<string>('all');
 
@@ -35,14 +32,14 @@ export const CivicDashboard: React.FC = () => {
       if (data.length > 0 && !selectedCase) {
         setSelectedCase(data[0]);
       }
-    } catch (err) {
-      console.warn('Failed to load civic cases:', err);
+    } catch {
+      // ignore
     }
   };
 
-  const handleGenerateGeminiReport = async () => {
+  const handleGenerateReport = async () => {
     if (!selectedCase) return;
-    setIsGeneratingGemini(true);
+    setIsGenerating(true);
     try {
       const res = await apiClient.generateGeminiReport(selectedCase.id);
       setSelectedCase((prev) =>
@@ -56,10 +53,8 @@ export const CivicDashboard: React.FC = () => {
           : null
       );
       await loadCases();
-    } catch (err) {
-      console.error('Gemini report generation failed:', err);
     } finally {
-      setIsGeneratingGemini(false);
+      setIsGenerating(false);
     }
   };
 
@@ -72,8 +67,6 @@ export const CivicDashboard: React.FC = () => {
         setSelectedCase(res.case);
       }
       await loadCases();
-    } catch (err) {
-      console.error('Authority submission failed:', err);
     } finally {
       setIsSubmitting(false);
     }
@@ -85,51 +78,50 @@ export const CivicDashboard: React.FC = () => {
   });
 
   return (
-    <div className="max-w-7xl mx-auto px-4 lg:px-8 py-6">
-      {/* Dashboard Top Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 sm:p-7 rounded-3xl bg-gradient-to-r from-[#0C1222] via-[#090D18] to-[#0D101D] border border-white/[0.08] shadow-2xl mb-7">
+    <div className="max-w-7xl mx-auto px-4 lg:px-8 py-5 font-['Plus_Jakarta_Sans',sans-serif]">
+      {/* Top Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 rounded-2xl bg-[#0D1322] border border-[#1E293B] mb-5">
         <div>
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-blue-400 mb-1.5 font-mono">
-            <Building2 className="w-4 h-4" />
-            <span>Bruhat Bengaluru Mahanagara Palike (BBMP) & NHAI Civic Intelligence</span>
+          <div className="flex items-center gap-2 text-xs font-mono text-cyan-400 mb-1">
+            <Building2 className="w-3.5 h-3.5" />
+            <span>MUNICIPAL DEFECT REGISTRY · BBMP / NHAI</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-            Road Hazard Evidence & Municipal Dispatch Portal
+          <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+            Road Hazard Evidence & Maintenance Dispatch
           </h1>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Grounded statutory grievance preparation powered by Google Gemini 2.5 Flash under IRC:SP:84-2019 standards.
+          <p className="text-xs text-slate-400 mt-0.5">
+            IRC:SP:84-2019 road maintenance standards compliance and 48-hour rectification audit.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 font-mono text-xs">
           <div className="text-right hidden sm:block">
-            <div className="text-xs font-bold text-slate-300">Mandated Authority SLA</div>
-            <div className="text-xs text-emerald-400 font-mono font-bold">48-Hour Pothole Rectification</div>
+            <div className="text-slate-400 text-[10px]">REPAIR SLA</div>
+            <div className="text-emerald-400 font-bold">48 Hours (Bituminous Seal)</div>
           </div>
           <button
             onClick={loadCases}
-            className="px-4 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-slate-200 text-xs font-bold border border-white/10 transition-all shadow-sm"
+            className="px-3.5 py-1.5 rounded-lg bg-[#090D16] hover:bg-slate-800 text-slate-200 border border-[#1E293B] transition-all"
           >
-            Refresh Cases
+            Refresh
           </button>
         </div>
       </div>
 
-      {/* Main 2-Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Col (1 Col): Cases List & Filters */}
-        <div className="space-y-4">
-          <div className="p-4 rounded-3xl bg-[#090D18]/90 border border-white/[0.08] shadow-xl backdrop-blur-xl">
-            {/* Status Filter Pills */}
-            <div className="flex flex-wrap gap-1.5 mb-4 text-xs font-mono">
+      {/* Main 2-Col Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        {/* Cases List */}
+        <div className="space-y-3">
+          <div className="p-3.5 rounded-2xl bg-[#0D1322] border border-[#1E293B]">
+            <div className="flex flex-wrap gap-1.5 mb-3 text-xs font-mono">
               {['all', 'detected', 'corroborated', 'prepared', 'submitted'].map((st) => (
                 <button
                   key={st}
                   onClick={() => setActiveFilter(st)}
-                  className={`px-3 py-1.5 rounded-xl capitalize font-bold transition-all ${
+                  className={`px-2.5 py-1 rounded-lg capitalize font-mono text-[11px] transition-all ${
                     activeFilter === st
-                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md'
-                      : 'bg-white/[0.03] text-slate-400 hover:text-white border border-white/[0.06]'
+                      ? 'bg-blue-600 text-white font-bold'
+                      : 'bg-[#090D16] text-slate-400 hover:text-white border border-[#1E293B]'
                   }`}
                 >
                   {st}
@@ -137,25 +129,24 @@ export const CivicDashboard: React.FC = () => {
               ))}
             </div>
 
-            {/* Cases Scrollable List */}
-            <div className="space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
+            <div className="space-y-2 max-h-[560px] overflow-y-auto pr-1">
               {filteredCases.map((c) => (
                 <div
                   key={c.id}
                   onClick={() => setSelectedCase(c)}
-                  className={`p-4 rounded-2xl border cursor-pointer transition-all ${
+                  className={`p-3 rounded-xl border cursor-pointer transition-all ${
                     selectedCase?.id === c.id
-                      ? 'bg-indigo-950/40 border-blue-500/80 shadow-lg shadow-blue-900/20 ring-1 ring-blue-400/30'
-                      : 'bg-[#06080E]/70 border-white/[0.06] hover:border-white/20'
+                      ? 'bg-[#121B30] border-cyan-500/60'
+                      : 'bg-[#090D16] border-[#1E293B] hover:border-slate-700'
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-bold text-white text-xs flex items-center gap-1.5 capitalize">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="font-bold text-white text-xs capitalize flex items-center gap-1.5">
                       <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
                       <span>{c.hazardType}</span>
                     </span>
                     <span
-                      className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full capitalize font-mono ${
+                      className={`text-[10px] font-mono px-2 py-0.5 rounded capitalize ${
                         c.status === 'submitted'
                           ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                           : c.status === 'corroborated'
@@ -167,17 +158,17 @@ export const CivicDashboard: React.FC = () => {
                     </span>
                   </div>
 
-                  <div className="text-xs text-slate-200 font-medium truncate mb-1">
+                  <div className="text-xs text-slate-200 truncate mb-1">
                     {c.roadName}
                   </div>
 
-                  <div className="text-[11px] text-slate-400 font-mono flex items-center justify-between mt-2 pt-2 border-t border-white/[0.05]">
-                    <span>Severity: <strong className="text-amber-300">{c.severityScore}/10</strong></span>
+                  <div className="text-[10px] text-slate-400 font-mono flex items-center justify-between pt-1.5 border-t border-white/[0.05]">
+                    <span>Severity: <strong>{c.severityScore}/10</strong></span>
                     <span>{c.evidenceCount} passes</span>
                   </div>
 
                   {c.authority.complaintNumber && (
-                    <div className="mt-2 text-[10px] text-emerald-400 font-mono bg-emerald-950/40 px-2.5 py-1 rounded-lg border border-emerald-500/20">
+                    <div className="mt-1.5 text-[10px] text-emerald-400 font-mono bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/20">
                       Ref: {c.authority.complaintNumber}
                     </div>
                   )}
@@ -187,49 +178,48 @@ export const CivicDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Col (2 Cols): Selected Case Evidence & Gemini Report */}
+        {/* Case Details & Report */}
         <div className="lg:col-span-2 space-y-4">
           {selectedCase ? (
-            <div className="p-6 sm:p-7 rounded-3xl bg-[#090D18]/90 border border-white/[0.08] shadow-2xl backdrop-blur-xl space-y-6">
-              {/* Case Header */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-white/[0.07]">
+            <div className="p-5 sm:p-6 rounded-2xl bg-[#0D1322] border border-[#1E293B] space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#1E293B]">
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono text-blue-400 font-bold uppercase">
+                    <span className="text-xs font-mono text-cyan-400 font-bold uppercase">
                       Case #{selectedCase.id}
                     </span>
-                    <span className="text-xs px-2.5 py-0.5 rounded-full bg-white/[0.06] text-slate-300 border border-white/10">
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-[#090D16] text-slate-300 border border-[#1E293B]">
                       {selectedCase.jurisdiction}
                     </span>
                   </div>
-                  <h2 className="text-xl sm:text-2xl font-black text-white mt-1 tracking-tight">
+                  <h2 className="text-lg sm:text-xl font-bold text-white mt-1">
                     {selectedCase.roadName}
                   </h2>
                 </div>
 
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2 font-mono text-xs">
                   {selectedCase.status !== 'submitted' ? (
                     <>
                       <button
-                        onClick={handleGenerateGeminiReport}
-                        disabled={isGeneratingGemini}
-                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-purple-600/25 transition-all disabled:opacity-50 ring-1 ring-white/20"
+                        onClick={handleGenerateReport}
+                        disabled={isGenerating}
+                        className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-purple-600/30 hover:bg-purple-600/40 text-purple-200 border border-purple-500/40 transition-all disabled:opacity-50"
                       >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>{isGeneratingGemini ? 'Drafting...' : 'Draft Notice (Gemini 2.5)'}</span>
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>{isGenerating ? 'Drafting...' : 'Draft Notice (IRC)'}</span>
                       </button>
 
                       <button
                         onClick={handleDispatchAuthority}
                         disabled={isSubmitting}
-                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/25 transition-all disabled:opacity-50 ring-1 ring-white/20"
+                        className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/40 text-emerald-200 border border-emerald-500/40 transition-all disabled:opacity-50"
                       >
                         <Send className="w-3.5 h-3.5" />
                         <span>{isSubmitting ? 'Dispatching...' : 'Dispatch to BBMP'}</span>
                       </button>
                     </>
                   ) : (
-                    <div className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-950/60 border border-emerald-500/40 px-4 py-2 rounded-xl font-mono font-bold shadow-[0_0_15px_rgba(52,211,153,0.15)]">
+                    <div className="flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-950/60 border border-emerald-500/40 px-3 py-1 rounded-lg">
                       <CheckCircle2 className="w-4 h-4" />
                       <span>Acknowledged: {selectedCase.authority.complaintNumber}</span>
                     </div>
@@ -237,92 +227,81 @@ export const CivicDashboard: React.FC = () => {
                 </div>
               </div>
 
-              {/* Evidence Inspector Section */}
+              {/* Photos & Telemetry */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Evidence Photo */}
-                <div className="rounded-2xl overflow-hidden border border-white/[0.08] bg-black shadow-md">
-                  <div className="p-3 bg-[#0C101A] border-b border-white/[0.08] text-xs font-bold text-slate-300 flex items-center justify-between">
-                    <span className="flex items-center gap-1.5">
-                      <Camera className="w-3.5 h-3.5 text-blue-400" />
-                      <span>Optical Evidence Photo</span>
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-mono">CameraX + LiteRT</span>
+                <div className="rounded-xl overflow-hidden border border-[#1E293B] bg-black">
+                  <div className="p-2 bg-[#090D16] border-b border-[#1E293B] text-xs font-mono text-slate-300 flex items-center justify-between">
+                    <span>Optical Frame</span>
+                    <span className="text-[10px] text-slate-400">CameraX + LiteRT</span>
                   </div>
                   <img
                     src={selectedCase.evidenceUrls[0]}
-                    alt="Road Hazard Evidence"
-                    className="w-full h-48 object-cover"
+                    alt="Defect"
+                    className="w-full h-44 object-cover"
                   />
                 </div>
 
-                {/* Sensor Telemetry Box */}
-                <div className="p-4 rounded-2xl bg-[#06080E] border border-white/[0.08] text-xs space-y-3 font-mono shadow-inner">
-                  <div className="text-slate-400 font-bold uppercase tracking-wider text-[11px] pb-1.5 border-b border-white/[0.06]">
-                    Sensor Telemetry Audit
+                <div className="p-3.5 rounded-xl bg-[#090D16] border border-[#1E293B] text-xs space-y-2 font-mono">
+                  <div className="text-slate-400 uppercase text-[10px] pb-1 border-b border-white/[0.06]">
+                    Defect Audit Telemetry
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">GPS Coordinates:</span>
-                    <span className="text-white font-bold">
-                      {selectedCase.location.latitude.toFixed(6)}° N, {selectedCase.location.longitude.toFixed(6)}° E
+                    <span className="text-slate-400">Coordinates:</span>
+                    <span className="text-white">
+                      {selectedCase.location.latitude.toFixed(6)}, {selectedCase.location.longitude.toFixed(6)}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">GPS Accuracy:</span>
-                    <span className="text-emerald-400 font-bold">±{selectedCase.location.horizontalAccuracyM || 1.5}m</span>
+                    <span className="text-emerald-400">±{selectedCase.location.horizontalAccuracyM || 1.5}m</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Independent Vehicles:</span>
-                    <span className="text-blue-400 font-bold">{selectedCase.evidenceCount} corroborations</span>
+                    <span className="text-slate-400">Independent Passes:</span>
+                    <span className="text-blue-400">{selectedCase.evidenceCount} vehicles</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Accelerometer Peak:</span>
-                    <span className="text-amber-400 font-bold">2.1G (Severe Shock)</span>
+                    <span className="text-amber-400">2.1G</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Estimated Depth:</span>
-                    <span className="text-rose-400 font-bold">7.5 cm (Class D40)</span>
+                    <span className="text-slate-400">Depth Class:</span>
+                    <span className="text-rose-400">7.5 cm (D40)</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Target Authority:</span>
+                    <span className="text-slate-400">Authority:</span>
                     <span className="text-slate-200">{selectedCase.authority.name}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Gemini Generated Formal Report Box */}
+              {/* Statutory Notice */}
               {selectedCase.formalComplaintMarkdown ? (
-                <div className="p-6 rounded-2xl bg-[#06080E] border border-purple-500/30 space-y-3 shadow-lg">
-                  <div className="flex items-center justify-between text-xs text-purple-400 pb-2.5 border-b border-white/[0.06]">
-                    <span className="flex items-center gap-2 font-bold text-sm">
-                      <Sparkles className="w-4 h-4" />
-                      <span>Statutory Notice Draft (Google Gemini 2.5 Flash)</span>
-                    </span>
-                    <span className="font-mono text-[11px] text-slate-400">
-                      Standard: IRC:SP:84-2019
-                    </span>
+                <div className="p-4 rounded-xl bg-[#090D16] border border-purple-500/30 space-y-2">
+                  <div className="flex items-center justify-between text-xs text-purple-400 pb-1.5 border-b border-[#1E293B]">
+                    <span className="font-bold font-mono">Statutory Notice (IRC:SP:84-2019 Format)</span>
+                    <span className="font-mono text-[10px] text-slate-400">Standard SLA: 48h</span>
                   </div>
 
-                  <div className="prose prose-invert prose-sm max-w-none text-xs text-slate-300 font-sans leading-relaxed whitespace-pre-line max-h-96 overflow-y-auto pr-2">
+                  <div className="prose prose-invert prose-sm max-w-none text-xs text-slate-300 font-sans leading-relaxed whitespace-pre-line max-h-80 overflow-y-auto pr-2">
                     {selectedCase.formalComplaintMarkdown}
                   </div>
                 </div>
               ) : (
-                <div className="p-8 rounded-2xl bg-[#06080E]/60 border border-dashed border-white/10 text-center text-xs text-slate-400">
-                  <Sparkles className="w-8 h-8 text-purple-400/60 mx-auto mb-2" />
-                  <p>Click <strong>"Draft Notice (Gemini 2.5)"</strong> to automatically generate a formal statutory road notice formatted for Indian municipal engineers.</p>
+                <div className="p-6 rounded-xl bg-[#090D16] border border-dashed border-[#1E293B] text-center text-xs text-slate-400 font-mono">
+                  Click "Draft Notice (IRC)" to generate a formal statutory road notice formatted for municipal engineers.
                 </div>
               )}
 
-              {/* Immutable Audit Trail */}
-              <div className="pt-4 border-t border-white/[0.07]">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2 font-mono">
-                  Immutable Case Audit Trail
+              {/* Audit Trail */}
+              <div className="pt-3 border-t border-[#1E293B]">
+                <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+                  Audit Log
                 </span>
-                <div className="space-y-1.5 text-xs font-mono text-slate-400">
+                <div className="space-y-1 text-[11px] font-mono text-slate-400">
                   {selectedCase.auditTrail.map((at, idx) => (
                     <div key={idx} className="flex items-start gap-2">
                       <span className="text-slate-600">[{new Date(at.timestamp).toLocaleTimeString()}]</span>
-                      <span className="text-blue-400 font-semibold">{at.action}:</span>
+                      <span className="text-blue-400">{at.action}:</span>
                       <span className="text-slate-300">{at.notes || at.actor}</span>
                     </div>
                   ))}
@@ -330,8 +309,8 @@ export const CivicDashboard: React.FC = () => {
               </div>
             </div>
           ) : (
-            <div className="p-12 rounded-3xl bg-[#090D18]/60 border border-white/[0.08] text-center text-slate-400 text-sm">
-              Select a civic case from the left panel to inspect evidence and review Gemini reports.
+            <div className="p-10 rounded-2xl bg-[#0D1322] border border-[#1E293B] text-center text-slate-400 text-xs font-mono">
+              Select a case to inspect evidence and review reports.
             </div>
           )}
         </div>
