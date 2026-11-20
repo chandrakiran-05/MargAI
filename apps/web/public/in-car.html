@@ -281,7 +281,61 @@ try {
   };
 } catch(e){}
 
-setInterval(pollSmartphoneMovement, 80);
+// Real-Time Zero-Latency WebSocket Hub (/api/ws/telemetry)
+var ws;
+function connectTelemetryWs() {
+  var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  try {
+    ws = new WebSocket(proto + '//' + location.host + '/api/ws/telemetry');
+    ws.onmessage = function(ev) {
+      try {
+        var d = JSON.parse(ev.data);
+        if (d.telemetry) {
+          if (d.telemetry.speed_kmh !== undefined && d.telemetry.speed_kmh > 0) {
+            var spd = Math.round(d.telemetry.speed_kmh);
+            V = spd / 3.6;
+            $('sp').textContent = spd;
+            var line = $('dashLine');
+            if (line) line.style.animationDuration = (17.5 / Math.max(V, 0.5)) + 's';
+          }
+          if (d.telemetry.road_geometry) {
+            var ct = d.telemetry.road_geometry.curve_type || 'STRAIGHT';
+            if (ct === 'SHARP_LEFT' || ct === 'HAIRPIN_BEND') {
+              $('world').style.transform = 'rotate(-5deg)';
+            } else if (ct === 'SHARP_RIGHT') {
+              $('world').style.transform = 'rotate(5deg)';
+            } else {
+              $('world').style.transform = 'none';
+            }
+          }
+          var zg = d.telemetry.z_accel_g || 1.0;
+          var now = Date.now();
+          if (zg > 1.8 && now - lastBumpTime > 2500) {
+            lastBumpTime = now;
+            var stage = $('cockpitStage');
+            stage.style.transform = 'translateY(10px)';
+            setTimeout(function(){ stage.style.transform = 'none'; }, 150);
+            toast('Pothole bump impact registered (' + zg.toFixed(2) + 'G)');
+            note = { t: 'Pothole bump logged by smartphone (' + zg.toFixed(2) + 'G)', u: now + 3500 };
+            beep(2);
+          }
+        }
+        if (d.frame_base64) {
+          var camImg = $('cam');
+          camImg.src = d.frame_base64;
+          camImg.style.display = 'block';
+        }
+      } catch(e){}
+    };
+    ws.onclose = function() {
+      setTimeout(connectTelemetryWs, 2000);
+    };
+  } catch(e){}
+}
+connectTelemetryWs();
+
+// Gentle fallback poll only if WebSocket drops
+setInterval(pollSmartphoneMovement, 3000);
 
 $('lv').onclick = function(){
   phoneSync = !phoneSync;

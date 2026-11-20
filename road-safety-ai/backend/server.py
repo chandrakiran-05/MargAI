@@ -62,6 +62,23 @@ latest_smartphone_state = {
     "device_info": {}
 }
 
+# Active WebSocket subscribers for zero-latency push
+active_telemetry_websockets: List[WebSocket] = []
+
+async def broadcast_telemetry(payload: dict, sender: WebSocket = None):
+    """Pushes telemetry/frames to all connected infotainment screens instantly without polling."""
+    dead = []
+    for ws in list(active_telemetry_websockets):
+        if ws == sender:
+            continue
+        try:
+            await ws.send_json(payload)
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        if ws in active_telemetry_websockets:
+            active_telemetry_websockets.remove(ws)
+
 class SmartphoneFramePayload(BaseModel):
     image_base64: str
     latitude: Optional[float] = None
@@ -223,6 +240,17 @@ async def process_smartphone_frame(payload: SmartphoneFramePayload):
 
     roundtrip_ms = round((time.time() - t0) * 1000.0, 1)
 
+    # 8. Instant Zero-Latency Push to connected Infotainment WebSockets
+    import asyncio
+    asyncio.create_task(broadcast_telemetry({
+        "type": "telemetry_update",
+        "connected": True,
+        "fps": current_fps,
+        "telemetry": latest_smartphone_state["telemetry"],
+        "latest_hazards": hazards,
+        "frame_base64": payload.image_base64
+    }))
+
     return {
         "status": "success",
         "hazards": hazards,
@@ -231,6 +259,58 @@ async def process_smartphone_frame(payload: SmartphoneFramePayload):
         "roundtrip_latency_ms": roundtrip_ms,
         "fps": current_fps
     }
+
+@app.websocket("/api/ws/telemetry")
+async def websocket_telemetry_hub(websocket: WebSocket):
+    await websocket.accept()
+    active_telemetry_websockets.append(websocket)
+    try:
+        # Immediate initial state sync
+        await websocket.send_json({
+            "type": "sync",
+            "connected": latest_smartphone_state["connected"],
+            "fps": latest_smartphone_state["fps"],
+            "telemetry": latest_smartphone_state["telemetry"],
+            "latest_hazards": latest_smartphone_state["hazards"],
+            "frame_base64": latest_smartphone_state["latest_frame_b64"]
+        })
+        while True:
+            text = await websocket.receive_text()
+            try:
+                data = json.loads(text)
+                now = time.time()
+                latest_smartphone_state["connected"] = True
+                latest_smartphone_state["last_frame_timestamp"] = now
+                if "speed_kmh" in data and data["speed_kmh"] is not None:
+                    if "telemetry" not in latest_smartphone_state:
+                        latest_smartphone_state["telemetry"] = {}
+                    latest_smartphone_state["telemetry"]["speed_kmh"] = data["speed_kmh"]
+                if "z_accel_g" in data and data["z_accel_g"] is not None:
+                    if "telemetry" not in latest_smartphone_state:
+                        latest_smartphone_state["telemetry"] = {}
+                    latest_smartphone_state["telemetry"]["z_accel_g"] = data["z_accel_g"]
+                if "road_curve" in data and data["road_curve"] is not None:
+                    if "telemetry" not in latest_smartphone_state:
+                        latest_smartphone_state["telemetry"] = {}
+                    if "road_geometry" not in latest_smartphone_state["telemetry"]:
+                        latest_smartphone_state["telemetry"]["road_geometry"] = {}
+                    latest_smartphone_state["telemetry"]["road_geometry"]["curve_type"] = data["road_curve"]
+                if "frame_base64" in data and data["frame_base64"]:
+                    latest_smartphone_state["latest_frame_b64"] = data["frame_base64"]
+
+                await broadcast_telemetry({
+                    "type": "telemetry_update",
+                    "connected": True,
+                    "fps": latest_smartphone_state["fps"],
+                    "telemetry": latest_smartphone_state["telemetry"],
+                    "latest_hazards": latest_smartphone_state["hazards"],
+                    "frame_base64": data.get("frame_base64") or latest_smartphone_state["latest_frame_b64"]
+                }, sender=websocket)
+            except Exception:
+                pass
+    except WebSocketDisconnect:
+        if websocket in active_telemetry_websockets:
+            active_telemetry_websockets.remove(websocket)
 
 @app.post("/api/detect/frame")
 async def detect_frame(file: UploadFile = File(...)):

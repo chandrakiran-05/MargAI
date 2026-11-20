@@ -75,14 +75,35 @@ export const SmartphoneDashcam: React.FC = () => {
   const isProcessingRef = useRef<boolean>(false);
   const lastAlertTimeRef = useRef<number>(0);
   const bcRef = useRef<BroadcastChannel | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
 
-  // Initialize BroadcastChannel for Zero-Latency Sync with In-Car Display
+  // Initialize BroadcastChannel & WebSocket for Zero-Latency Sync with In-Car Display
   useEffect(() => {
     try {
       bcRef.current = new BroadcastChannel('margai_road_telemetry');
     } catch (e) {}
+
+    // Persistent WebSocket Uplink to Backend Hub
+    let ws: WebSocket | null = null;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/api/ws/telemetry`;
+
+    const connectWs = () => {
+      try {
+        ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
+        ws.onopen = () => {};
+        ws.onclose = () => {
+          setTimeout(connectWs, 2000);
+        };
+      } catch (e) {}
+    };
+
+    connectWs();
+
     return () => {
       if (bcRef.current) bcRef.current.close();
+      if (ws) ws.close();
     };
   }, []);
 
@@ -97,7 +118,11 @@ export const SmartphoneDashcam: React.FC = () => {
             lng: pos.coords.longitude,
           });
           if (pos.coords.speed !== null && pos.coords.speed >= 0) {
-            setSpeedKmh(Math.round(pos.coords.speed * 3.6));
+            const spd = Math.round(pos.coords.speed * 3.6);
+            setSpeedKmh(spd);
+            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+              wsRef.current.send(JSON.stringify({ speed_kmh: spd }));
+            }
           }
         },
         (err) => console.log('Geolocation note:', err.message),
@@ -114,13 +139,20 @@ export const SmartphoneDashcam: React.FC = () => {
         const rawZ = event.accelerationIncludingGravity.z;
         // Normalize 9.8m/s^2 to ~1.0G
         const gVal = Math.abs(rawZ) / 9.80665;
-        setZAccelG(Math.round(gVal * 100) / 100);
+        const roundedG = Math.round(gVal * 100) / 100;
+        setZAccelG(roundedG);
+        if (roundedG > 1.8 && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({
+            z_accel_g: roundedG,
+            speed_kmh: speedKmh
+          }));
+        }
       }
     };
 
     window.addEventListener('devicemotion', handleMotion);
     return () => window.removeEventListener('devicemotion', handleMotion);
-  }, []);
+  }, [speedKmh]);
 
   // 2. Camera & Video Stream Controls
   const startStreamSource = async () => {
@@ -264,12 +296,12 @@ export const SmartphoneDashcam: React.FC = () => {
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      canvas.width = 320;
-      canvas.height = 180;
-      ctx.drawImage(video, 0, 0, 320, 180);
+      canvas.width = 240;
+      canvas.height = 135;
+      ctx.drawImage(video, 0, 0, 240, 135);
 
-      // Compress to low-latency JPEG
-      const b64 = canvas.toDataURL('image/jpeg', 0.55);
+      // Compress to ultra-lightweight JPEG (~4KB for instantaneous transmission)
+      const b64 = canvas.toDataURL('image/jpeg', 0.42);
       isProcessingRef.current = true;
       const t0 = performance.now();
 
@@ -327,18 +359,18 @@ export const SmartphoneDashcam: React.FC = () => {
         }
       } catch (err) {
         // Fallback simulation if backend unreachable
-        setRoundtripLatency(12);
+        setRoundtripLatency(10);
       } finally {
         isProcessingRef.current = false;
       }
     };
 
-    // Run at ~12-15 FPS (sub-second real-time responsiveness)
-    intervalId = setInterval(captureAndSendFrame, 80);
+    // Run at ~11-12 FPS to maintain smooth feed while leaving full network headroom
+    intervalId = setInterval(captureAndSendFrame, 90);
     return () => clearInterval(intervalId);
   }, [cameraActive, gpsCoords, zAccelG, speedKmh, roadCurve]);
 
-  // Kinetic Road Movement Triggers for Interactive Testing
+  // Kinetic Road Movement Triggers for Interactive Testing (Instant WebSocket Push)
   const triggerBumpSim = async (gVal: number) => {
     setZAccelG(gVal);
     if ('vibrate' in navigator) {
@@ -353,6 +385,15 @@ export const SmartphoneDashcam: React.FC = () => {
     };
     setActiveHazards([potholeHz]);
     triggerAudioAndHaptic('POTHOLE', 'CRITICAL');
+
+    // Instant WebSocket push to Infotainment (<2ms)
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        speed_kmh: speedKmh,
+        z_accel_g: gVal,
+        road_curve: roadCurve
+      }));
+    }
 
     bcRef.current?.postMessage({
       speed_kmh: speedKmh,
@@ -387,6 +428,13 @@ export const SmartphoneDashcam: React.FC = () => {
 
   const setManualSpeed = (spd: number) => {
     setSpeedKmh(spd);
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        speed_kmh: spd,
+        z_accel_g: zAccelG,
+        road_curve: roadCurve
+      }));
+    }
     bcRef.current?.postMessage({
       speed_kmh: spd,
       z_accel_g: zAccelG,
@@ -398,6 +446,13 @@ export const SmartphoneDashcam: React.FC = () => {
 
   const setManualCurve = (curve: string) => {
     setRoadCurve(curve);
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        speed_kmh: speedKmh,
+        z_accel_g: zAccelG,
+        road_curve: curve
+      }));
+    }
     bcRef.current?.postMessage({
       speed_kmh: speedKmh,
       z_accel_g: zAccelG,

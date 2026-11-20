@@ -212,60 +212,94 @@ export const InCarDisplay: React.FC = () => {
     };
   }, [isBumpActive]);
 
-  // 2. Poll Smartphone State & Road Movements from AI Server (/api/smartphone/...)
+  // 2. Real-Time Zero-Latency WebSocket Push Hub (/api/ws/telemetry)
   useEffect(() => {
     if (!liveSyncActive) return;
 
-    let pollInterval: any;
+    let ws: WebSocket | null = null;
+    let fallbackPollInterval: any = null;
+    let isWsOpen = false;
 
-    const pollSmartphone = async () => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/api/ws/telemetry`;
+
+    const handleMessage = (data: any) => {
+      setPhoneConnected(true);
+      if (data.fps) setPhoneFps(data.fps);
+
+      if (data.telemetry) {
+        // A. Speed synchronization
+        if (data.telemetry.speed_kmh !== undefined && data.telemetry.speed_kmh > 0) {
+          setVehicleSpeed(Math.round(data.telemetry.speed_kmh));
+        }
+
+        // B. Road Curvature & 3D Road Tilt
+        if (data.telemetry.road_geometry?.curve_type) {
+          setRoadCurveType(data.telemetry.road_geometry.curve_type);
+        }
+
+        // C. Accelerometer Bump Shockwave Impact
+        const zg = data.telemetry.z_accel_g || 1.02;
+        setZAccelG(zg);
+        if (zg > 1.8 && !isBumpActive) {
+          triggerBumpEvent(zg);
+        }
+      }
+
+      // D. Picture-in-Picture Camera Frame
+      if (data.frame_base64) {
+        setPhoneCameraB64(data.frame_base64);
+      }
+
+      // E. Hazards Queue
+      if (data.latest_hazards && data.latest_hazards.length > 0) {
+        ingestPhoneHazards(data.latest_hazards);
+      }
+    };
+
+    const connectWs = () => {
+      try {
+        ws = new WebSocket(wsUrl);
+        ws.onopen = () => {
+          isWsOpen = true;
+          setPhoneConnected(true);
+        };
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            handleMessage(data);
+          } catch (e) {}
+        };
+        ws.onclose = () => {
+          isWsOpen = false;
+          setTimeout(connectWs, 2000);
+        };
+        ws.onerror = () => {
+          isWsOpen = false;
+        };
+      } catch (e) {
+        isWsOpen = false;
+      }
+    };
+
+    connectWs();
+
+    // Low-frequency gentle fallback poll (every 2.5s) only if WebSocket disconnects
+    fallbackPollInterval = setInterval(async () => {
+      if (isWsOpen) return;
       try {
         const res = await fetch('/api/smartphone/status');
         if (res.ok) {
           const status = await res.json();
-          setPhoneConnected(status.connected);
-          setPhoneFps(status.fps || 0);
-
-          if (status.connected && status.telemetry) {
-            // A. Update Vehicle Speed from Phone GPS/Sensors
-            if (status.telemetry.speed_kmh !== undefined && status.telemetry.speed_kmh > 0) {
-              setVehicleSpeed(Math.round(status.telemetry.speed_kmh));
-            }
-
-            // B. Road Curvature from Phone AI Camera / Gyroscope
-            if (status.telemetry.road_geometry?.curve_type) {
-              setRoadCurveType(status.telemetry.road_geometry.curve_type);
-            }
-
-            // C. Pothole Bump Impact from Phone Z-Axis Accelerometer
-            const zg = status.telemetry.z_accel_g || 1.02;
-            setZAccelG(zg);
-            if (zg > 1.8 && !isBumpActive) {
-              triggerBumpEvent(zg);
-            }
-
-            // D. Ingest Hazards Detected by Phone Camera
-            if (status.latest_hazards && status.latest_hazards.length > 0) {
-              ingestPhoneHazards(status.latest_hazards);
-            }
-          }
+          handleMessage(status);
         }
+      } catch (e) {}
+    }, 2500);
 
-        // Fetch live picture-in-picture rear camera frame
-        const frameRes = await fetch('/api/smartphone/latest_frame');
-        if (frameRes.ok) {
-          const frameData = await frameRes.json();
-          if (frameData.frame_base64) {
-            setPhoneCameraB64(frameData.frame_base64);
-          }
-        }
-      } catch (e) {
-        // AI server offline or local demo mode
-      }
+    return () => {
+      if (ws) ws.close();
+      if (fallbackPollInterval) clearInterval(fallbackPollInterval);
     };
-
-    pollInterval = setInterval(pollSmartphone, 75);
-    return () => clearInterval(pollInterval);
   }, [liveSyncActive, isBumpActive]);
 
   // Ingest Hazards coming from Phone Camera AI
