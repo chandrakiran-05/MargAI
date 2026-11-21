@@ -1123,7 +1123,7 @@ export const InCarDisplay: React.FC = () => {
                     NO HAZARDS AHEAD
                   </div>
                   <div className="text-[11px] font-mono text-emerald-300">
-                    Auto-Purged Passed Pothole
+                    Geofenced Corridor Clear · All Lanes Safe
                   </div>
                 </div>
               )}

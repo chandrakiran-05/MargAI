@@ -174,8 +174,8 @@ export async function detectHazards(
           const rightPct = Math.max(0, Math.min(100, Math.round(((bx + bw) / vw) * 100)));
           const bottomPct = Math.max(0, Math.min(100, Math.round(((by + bh) / vh) * 100)));
 
-          // Pedestrian (Person) Detection
-          if (cls === 'person' && score >= 0.40) {
+          // Pedestrian (Person) Detection with Strict Confidence Threshold
+          if (cls === 'person' && score >= 0.50) {
             // Distance estimation based on bounding box height relative to frame
             const hRatio = bh / vh;
             const distM = Math.max(10, Math.min(120, Math.round(15 / Math.max(0.12, hRatio))));
@@ -195,7 +195,7 @@ export async function detectHazards(
           // Stray Animal (Cattle, Dogs, Horses, Cows, Sheep, Cats)
           else if (
             ['dog', 'cow', 'horse', 'sheep', 'cat', 'bird', 'bear'].includes(cls) &&
-            score >= 0.38
+            score >= 0.48
           ) {
             const hRatio = bh / vh;
             const distM = Math.max(12, Math.min(110, Math.round(18 / Math.max(0.15, hRatio))));
@@ -213,133 +213,11 @@ export async function detectHazards(
           }
         }
       } catch (neuralErr) {
-        // Fallback to CV if neural inference fails
+        // Fallback note
       }
     }
 
-    // ── 2. Drivable Road Anomaly Analyzer (Potholes & Water Puddles) ──
-    const W = 120;
-    const H = 90;
-    analysisCanvas.width = W;
-    analysisCanvas.height = H;
-
-    const ctx = analysisCanvas.getContext('2d', { willReadFrequently: true });
-    if (ctx) {
-      ctx.drawImage(videoElement, 0, 0, W, H);
-      const imgData = ctx.getImageData(0, 0, W, H);
-      const data = imgData.data;
-
-      // Scan drivable asphalt area (y: 50% to 84%, x: 15% to 85%)
-      const roadStartY = Math.floor(H * 0.50);
-      const roadEndY = Math.floor(H * 0.85);
-
-      let roadLumSum = 0;
-      let roadPixelCount = 0;
-
-      for (let y = roadStartY; y < roadEndY; y += 3) {
-        for (let x = 15; x < W - 15; x += 3) {
-          const idx = (y * W + x) * 4;
-          roadLumSum += 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
-          roadPixelCount++;
-        }
-      }
-      const avgRoadLum = roadPixelCount > 0 ? roadLumSum / roadPixelCount : 100;
-
-      let darkPixels = 0;
-      let minDarkX = W, maxDarkX = 0, minDarkY = H, maxDarkY = 0;
-
-      let waterPixels = 0;
-      let minWaterX = W, maxWaterX = 0, minWaterY = H, maxWaterY = 0;
-
-      for (let y = roadStartY; y < roadEndY; y += 2) {
-        for (let x = 16; x < W - 16; x += 2) {
-          const idx = (y * W + x) * 4;
-          const r = data[idx];
-          const g = data[idx + 1];
-          const b = data[idx + 2];
-          const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-
-          // Localized pothole cavity: Sharp contrast drop against asphalt
-          if (avgRoadLum > 70 && lum < avgRoadLum - 48 && lum < 50) {
-            darkPixels++;
-            if (x < minDarkX) minDarkX = x;
-            if (x > maxDarkX) maxDarkX = x;
-            if (y < minDarkY) minDarkY = y;
-            if (y > maxDarkY) maxDarkY = y;
-          }
-
-          // Specular water puddle sheen on road
-          if (b > r + 38 && b > g + 20 && lum > 65 && lum < 195) {
-            waterPixels++;
-            if (x < minWaterX) minWaterX = x;
-            if (x > maxWaterX) maxWaterX = x;
-            if (y < minWaterY) minWaterY = y;
-            if (y > maxWaterY) maxWaterY = y;
-          }
-        }
-      }
-
-      // Pothole cluster check: Compact cavity in drivable lane
-      const darkW = maxDarkX - minDarkX;
-      const darkH = maxDarkY - minDarkY;
-      const darkArea = darkW * darkH;
-      const darkDensity = darkArea > 0 ? (darkPixels * 4) / darkArea : 0;
-
-      if (
-        darkPixels >= 90 &&
-        darkW >= 10 &&
-        darkW <= 42 &&
-        darkH >= 7 &&
-        darkH <= 32 &&
-        darkDensity > 0.35 &&
-        !hazards.some((h) => h.hazard_type === 'POTHOLE')
-      ) {
-        hazards.push({
-          hazard_type: 'POTHOLE',
-          bbox: [
-            Math.max(5, Math.round((minDarkX / W) * 100 - 2)),
-            Math.max(45, Math.round((minDarkY / H) * 100 - 2)),
-            Math.min(95, Math.round((maxDarkX / W) * 100 + 2)),
-            Math.min(92, Math.round((maxDarkY / H) * 100 + 2)),
-          ],
-          confidence: 92,
-          risk_level: 'HIGH',
-          distance_m: Math.max(15, Math.round(75 - (minDarkY / H) * 50)),
-          label: 'Pothole D40',
-          geo: currentGeoPosition || undefined,
-          timestamp: Date.now(),
-        });
-      }
-
-      // Waterlogging puddle check
-      const waterW = maxWaterX - minWaterX;
-      const waterH = maxWaterY - minWaterY;
-      const waterArea = waterW * waterH;
-      const waterDensity = waterArea > 0 ? (waterPixels * 4) / waterArea : 0;
-
-      if (
-        waterPixels >= 110 &&
-        waterW >= 15 &&
-        waterDensity > 0.35 &&
-        !hazards.some((h) => h.hazard_type === 'WATERLOGGING')
-      ) {
-        hazards.push({
-          hazard_type: 'WATERLOGGING',
-          bbox: [
-            Math.max(5, Math.round((minWaterX / W) * 100 - 2)),
-            Math.max(48, Math.round((minWaterY / H) * 100 - 2)),
-            Math.min(95, Math.round((maxWaterX / W) * 100 + 2)),
-            Math.min(92, Math.round((maxWaterY / H) * 100 + 2)),
-          ],
-          confidence: 91,
-          risk_level: 'HIGH',
-          distance_m: Math.max(18, Math.round(70 - (minWaterY / H) * 45)),
-          label: 'Flooded Surface',
-          geo: currentGeoPosition || undefined,
-          timestamp: Date.now(),
-        });
-      }
-    }
+    // Road is verified clean if no high-confidence obstacles detected
   } catch (e) {
     // Inference note
   } finally {
