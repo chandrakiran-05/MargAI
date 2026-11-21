@@ -755,27 +755,33 @@ export const InCarDisplay: React.FC = () => {
                   </div>
                 )}
 
-                {/* CAMERA OVERLAYS (Slide 10.3: Deterministic Filtering & Perception) */}
+                {/* CAMERA OVERLAYS — Only show when matching hazards are active */}
                 <div className="absolute inset-0 pointer-events-none z-10">
-                  {/* Pothole Bounding Box */}
-                  <div className="absolute left-[22%] top-[60%] w-[26%] h-[22%] border-2 border-[#f59e0b] bg-[#f59e0b]/15 shadow-[0_0_15px_rgba(245,158,11,0.5)]">
-                    <span className="absolute -top-5 left-0 bg-[#f59e0b] text-black font-extrabold text-[10px] px-1.5 py-0.5 rounded-sm uppercase tracking-wide font-mono">
-                      POTHOLE 92%
-                    </span>
-                  </div>
+                  {/* Pothole Bounding Box — only when a pothole hazard is in queue */}
+                  {hazards.some((h) => h.key === 'pothole') && (
+                    <div className="absolute left-[22%] top-[60%] w-[26%] h-[22%] border-2 border-[#f59e0b] bg-[#f59e0b]/15 shadow-[0_0_15px_rgba(245,158,11,0.5)] animate-pulse">
+                      <span className="absolute -top-5 left-0 bg-[#f59e0b] text-black font-extrabold text-[10px] px-1.5 py-0.5 rounded-sm uppercase tracking-wide font-mono">
+                        POTHOLE {Math.round((hazards.find((h) => h.key === 'pothole')?.n || 1) >= 3 ? 95 : 92)}%
+                      </span>
+                    </div>
+                  )}
 
-                  {/* Pedestrian Bounding Box */}
-                  <div className="absolute left-[68%] top-[28%] w-[18%] h-[54%] border-2 border-[#ef4444] bg-[#ef4444]/15 shadow-[0_0_15px_rgba(239,68,68,0.5)]">
-                    <span className="absolute -top-5 left-0 bg-[#ef4444] text-white font-extrabold text-[10px] px-1.5 py-0.5 rounded-sm uppercase tracking-wide font-mono">
-                      PEDESTRIAN 88%
-                    </span>
-                  </div>
+                  {/* Pedestrian Bounding Box — only when a pedestrian hazard is in queue */}
+                  {hazards.some((h) => h.key === 'walker') && (
+                    <div className="absolute left-[68%] top-[28%] w-[18%] h-[54%] border-2 border-[#ef4444] bg-[#ef4444]/15 shadow-[0_0_15px_rgba(239,68,68,0.5)] animate-pulse">
+                      <span className="absolute -top-5 left-0 bg-[#ef4444] text-white font-extrabold text-[10px] px-1.5 py-0.5 rounded-sm uppercase tracking-wide font-mono">
+                        PEDESTRIAN {Math.round((hazards.find((h) => h.key === 'walker')?.n || 1) >= 3 ? 94 : 88)}%
+                      </span>
+                    </div>
+                  )}
 
-                  {/* Roadside Filter Indicator (Slide 10.3) */}
-                  <div className="absolute left-[12%] bottom-[20%] flex items-center gap-1.5 bg-black/80 border border-slate-600 px-3 py-1 rounded-full text-[10px] font-mono text-slate-200 backdrop-blur-md">
-                    <span className="w-2 h-2 rounded-full bg-slate-400"></span>
-                    <span>FILTERED: ROADSIDE</span>
-                  </div>
+                  {/* Roadside Filter Indicator — only when any hazard is active */}
+                  {hazards.length > 0 && (
+                    <div className="absolute left-[12%] bottom-[20%] flex items-center gap-1.5 bg-black/80 border border-slate-600 px-3 py-1 rounded-full text-[10px] font-mono text-slate-200 backdrop-blur-md">
+                      <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+                      <span>FILTERED: ROADSIDE</span>
+                    </div>
+                  )}
 
                   {/* Feed Status Tag */}
                   <div className="absolute top-4 right-4 bg-black/70 border border-white/10 px-2.5 py-1 rounded-lg text-[10px] font-mono text-emerald-400 backdrop-blur-md flex items-center gap-1.5">
