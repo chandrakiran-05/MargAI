@@ -1,10 +1,8 @@
-/* MargAI service worker: offline-friendly app shell. Never caches the API or WebSocket relay. */
-const CACHE = 'margai-shell-v1';
-self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(['/', '/manifest.webmanifest', '/icon-192.png'])).then(() => self.skipWaiting())); });
-self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(k => Promise.all(k.filter(x => x !== CACHE).map(x => caches.delete(x)))).then(() => self.clients.claim())); });
-self.addEventListener('fetch', e => {
-  const req = e.request; const url = new URL(req.url);
-  if (req.method !== 'GET' || url.origin !== location.origin || /^\/(v1|api|health)\b/.test(url.pathname)) return;
-  if (req.mode === 'navigate') { e.respondWith(fetch(req).catch(() => caches.match('/'))); return; }
-  e.respondWith(caches.match(req).then(hit => hit || fetch(req).then(res => { if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); } return res; })));
-});
+/* Relative scope supports both / and GitHub project paths. API requests are never cached. */
+const CACHE='margai-camera-v3';
+const base=new URL('./',self.location.href);
+self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll([base.href])).then(()=>self.skipWaiting()));});
+self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('margai-')&&key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim()));});
+self.addEventListener('fetch',event=>{const request=event.request,url=new URL(request.url);if(request.method!=='GET'||url.origin!==base.origin||/\/(v1|api|health)(\/|$)/.test(url.pathname))return;
+if(request.mode==='navigate'){event.respondWith(fetch(request).catch(()=>caches.match(base.href)));return;}
+if(/\.(wasm|onnx|tflite|js|mjs|css|png|svg)$/.test(url.pathname))event.respondWith(caches.match(request).then(hit=>hit||fetch(request).then(response=>{if(response.ok){const copy=response.clone();caches.open(CACHE).then(cache=>cache.put(request,copy));}return response;})));});

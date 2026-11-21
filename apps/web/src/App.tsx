@@ -8,7 +8,7 @@ const SmartphoneDashcam = lazy(() => import('./components/SmartphoneDashcam').th
 const InCarDisplay = lazy(() => import('./components/InCarDisplay').then(module => ({ default: module.InCarDisplay })));
 const CivicDashboard = lazy(() => import('./components/CivicDashboard').then(module => ({ default: module.CivicDashboard })));
 const GoogleStackInspector = lazy(() => import('./components/GoogleStackInspector').then(module => ({ default: module.GoogleStackInspector })));
-const DriverApp = lazy(() => import('./components/DriverApp').then(module => ({ default: module.DriverApp })));
+
 const LiveMap = lazy(() => import('./components/LiveMap').then(module => ({ default: module.LiveMap })));
 const DriveMap = lazy(() => import('./components/DriveMap').then(module => ({ default: module.DriveMap })));
 function readView(): TabType {
@@ -34,6 +34,7 @@ export const App: React.FC = () => {
   useEffect(() => { document.title = `${translate(selectedLanguage,VIEWS.find(item => item.id === currentTab)?.label || 'Home')} · MargAI`; document.documentElement.lang=selectedLanguage; }, [currentTab,selectedLanguage]);
   useEffect(() => { try { localStorage.setItem('margai-language', selectedLanguage); } catch { /* Optional storage. */ } }, [selectedLanguage]);
   useEffect(() => {
+    if (location.hostname.endsWith('github.io') && !import.meta.env.VITE_API_ORIGIN) return;
     let active = true;
     const checkHealth = async () => { try { const result = await apiClient.getHealth(); if (active) setIsBackendConnected(result.status === 'ok'); } catch { if (active) setIsBackendConnected(false); } };
     checkHealth(); const interval = window.setInterval(checkHealth, 15000);
@@ -48,7 +49,7 @@ export const App: React.FC = () => {
       {currentTab === 'in-car' && <div className="road-showcase"><InCarDisplay/></div>}
       {currentTab === 'live' && <LiveMap mode="observer" onNavigate={navigate}/>}
       {currentTab === 'car' && <LiveMap mode="car" onNavigate={navigate}/>}
-      {currentTab === 'app' && <DriverApp onNavigate={navigate}/>}
+      {currentTab === 'app' && <SmartphoneDashcam/>}
       {currentTab === 'smartphone' && <div className="camera-showcase"><SmartphoneDashcam/></div>}
       {currentTab === 'journey' && <DriveMap onNavigate={navigate}/>}
       {currentTab === 'driver' && <DriveMap onNavigate={navigate}/>}

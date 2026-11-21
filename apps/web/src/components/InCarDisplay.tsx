@@ -147,6 +147,7 @@ const HAZARD_SPECS: Record<
 
 export const InCarDisplay: React.FC = () => {
   const [hostedPhone, setHostedPhone] = useState(false);
+  const [hostedPhoneOrigin, setHostedPhoneOrigin] = useState(import.meta.env.VITE_PHONE_APP_ORIGIN || (location.hostname.endsWith('github.io') ? location.origin + location.pathname : ''));
   const [phoneOrigin, setPhoneOrigin] = useState('');
   const [pairQr, setPairQr] = useState('');
   useEffect(() => { void apiClient.getConfig().then(config => { if (config.phoneWebOrigin) setPhoneOrigin(config.phoneWebOrigin); }).catch(() => {}); }, []);
@@ -267,7 +268,7 @@ export const InCarDisplay: React.FC = () => {
             setLeftViewMode('camera');
             setShowPairModal(false); // Auto-close pairing modal!
           }
-          if (data.speed_kmh !== undefined && data.speed_kmh > 0) {
+          if (typeof data.speed_kmh === 'number' && data.speed_kmh >= 0) {
             setVehicleSpeed(Math.round(data.speed_kmh));
           }
           if (data.road_curve) {
@@ -386,7 +387,7 @@ export const InCarDisplay: React.FC = () => {
         const msg = event.data;
         if (!msg) return;
 
-        if (msg.speed_kmh !== undefined && msg.speed_kmh > 0) {
+        if (typeof msg.speed_kmh === 'number' && msg.speed_kmh >= 0) {
           setVehicleSpeed(Math.round(msg.speed_kmh));
         }
         if (msg.road_curve) {
@@ -517,10 +518,12 @@ export const InCarDisplay: React.FC = () => {
       else if (ht.includes('WATER') || ht.includes('FLOOD')) key = 'waterlogging';
       else if (ht.includes('CURVE') || ht.includes('TURN')) key = 'curve';
       else if (ht.includes('POTHOLE')) key = 'pothole';
+      else return;
 
       const estDist = dh.distance_m ? Math.round(dh.distance_m) : 60;
       const spec = HAZARD_SPECS[key] || HAZARD_SPECS.pothole;
-      const conf = dh.confidence ? Math.round(dh.confidence * 100) : 92;
+      const confidence = typeof dh.confidence === 'number' ? dh.confidence : null;
+      const conf = confidence === null ? 0 : Math.round(confidence <= 1 ? confidence * 100 : confidence);
 
       if (dh.geo) {
         setActiveGeo({ lat: dh.geo.lat, lng: dh.geo.lng });
@@ -690,12 +693,15 @@ export const InCarDisplay: React.FC = () => {
   const dashFlowDuration = `${Math.max(0.4, 28 / Math.max(15, vehicleSpeed))}s`;
 
   const activePairId = verifiedPeerId || peerId;
-  const phonePairUrl =
-    typeof window !== 'undefined'
-      ? hostedPhone ? `https://pbalamurali74-hue.github.io/MargAI/?mode=smartphone&pair=${activePairId}` : `${phoneOrigin || window.location.origin}${window.location.pathname}?view=smartphone&pair=${activePairId}`
-      : `https://pbalamurali74-hue.github.io/MargAI/?mode=smartphone&pair=${activePairId}`;
+  const phonePairUrl = (() => {
+    try {
+      const url = new URL(hostedPhone ? hostedPhoneOrigin : phoneOrigin || window.location.origin + window.location.pathname);
+      if (hostedPhone && url.protocol !== 'https:') return '';
+      url.search = ''; url.searchParams.set('view','smartphone'); url.searchParams.set('pair',activePairId); return url.href;
+    } catch { return ''; }
+  })();
 
-  useEffect(() => { void QRCode.toDataURL(phonePairUrl, {width:180,margin:1}).then(setPairQr).catch(() => setPairQr('')); }, [phonePairUrl]);
+  useEffect(() => { if (!phonePairUrl) { setPairQr(''); return; } void QRCode.toDataURL(phonePairUrl, {width:180,margin:1}).then(setPairQr).catch(() => setPairQr('')); }, [phonePairUrl]);
 
   const copyPairLink = () => {
     if (navigator.clipboard) {
@@ -1424,15 +1430,17 @@ export const InCarDisplay: React.FC = () => {
                 <button className={`flex-1 border px-2 py-2 text-xs rounded ${!hostedPhone ? 'bg-slate-600 text-white' : 'text-slate-300'}`} onClick={() => setHostedPhone(false)} aria-pressed={!hostedPhone}>Local Wi-Fi</button>
                 <button className={`flex-1 border px-2 py-2 text-xs rounded ${hostedPhone ? 'bg-slate-600 text-white' : 'text-slate-300'}`} onClick={() => setHostedPhone(true)} aria-pressed={hostedPhone}>Hosted phone page</button>
               </div>
-              <p className="text-xs text-slate-300 mb-3">{hostedPhone ? 'Uses the existing GitHub camera page and WebRTC. Your local API is not exposed.' : 'Phone and laptop must be reachable on the same Wi-Fi. Local HTTPS needs the demo certificate.'}</p>
+              <p className="text-xs text-slate-300 mb-3">{hostedPhone ? 'Uses the deployed phone website and WebRTC. Your local API is not exposed.' : 'Phone and laptop must be reachable on the same Wi-Fi. Local HTTPS needs the demo certificate.'}</p>
               <a className="block text-xs text-cyan-300 break-all mb-3" href={phonePairUrl} target="_blank" rel="noreferrer">{phonePairUrl}</a>
+              {hostedPhone && <label className="block text-xs text-left text-slate-300 mb-3">Updated phone website URL<input type="url" value={hostedPhoneOrigin} onChange={event=>setHostedPhoneOrigin(event.target.value)} placeholder="https://your-site/MargAI/" className="block w-full mt-2 p-2 rounded bg-slate-800 text-white"/></label>}
+              {hostedPhone && !phonePairUrl && <p className="text-xs text-amber-200 mb-3">Enter the HTTPS address of the deployed, updated phone app.</p>}
               {/* QR Code */}
               <div className="bg-white p-2.5 rounded-xl inline-block shadow-inner mb-3">
-                <img
+                {pairQr && <img
                   src={pairQr}
                   alt="QR Code"
                   className="w-40 h-40"
-                />
+                />}
               </div>
 
               {/* Room Code Badge */}
@@ -1445,6 +1453,7 @@ export const InCarDisplay: React.FC = () => {
               <button
                 type="button"
                 onClick={copyPairLink}
+                disabled={!phonePairUrl}
                 className="w-full py-2 bg-[#1e293b] hover:bg-slate-700 text-slate-200 border border-slate-600 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all mb-2 shadow"
               >
                 {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}

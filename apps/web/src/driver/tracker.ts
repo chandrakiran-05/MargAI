@@ -1,4 +1,4 @@
-import {Det, DetClass, iou} from './detect';
+import {Det, DetClass, iou} from './detectionTypes';
 export type Track = {id: string; cls: DetClass; box: Det; conf: number; hits: number; misses: number; firstMs: number; lastMs: number; hist: {t: number; h: number}[]; sentAt: number; confirmed: boolean; ttcS: number | null; src: string};
 let seq = 0;
 /** Simple greedy IOU tracker. A track is "confirmed" after >=3 matched frames. */
@@ -9,7 +9,7 @@ export class Tracker {
     for (const tr of this.tracks) {
       let bi = -1, bv = 0.25;
       dets.forEach((d, i) => { if (used.has(i) || d.cls !== tr.cls) return; const v = iou(tr.box, d); if (v > bv) { bv = v; bi = i; } });
-      if (bi >= 0) { used.add(bi); const d = dets[bi]; tr.box = d; tr.conf = Math.max(d.conf, tr.conf * 0.9); tr.hits++; tr.misses = 0; tr.lastMs = tMs; tr.src = d.src; tr.hist.push({t: tMs, h: d.h}); if (tr.hist.length > 12) tr.hist.shift(); if (tr.hits >= 3) tr.confirmed = true; }
+      if (bi >= 0) { used.add(bi); const d = dets[bi]; const previousFrame=tr.box.frameTime; tr.box = d; tr.conf = Math.max(d.conf, tr.conf * 0.9); if(d.frameTime===undefined||d.frameTime!==previousFrame)tr.hits++; tr.misses = 0; tr.lastMs = tMs; tr.src = d.src; tr.hist.push({t: tMs, h: d.h}); if (tr.hist.length > 12) tr.hist.shift(); if (tr.hits >= 3) tr.confirmed = true; }
       else tr.misses++;
     }
     dets.forEach((d, i) => { if (!used.has(i)) this.tracks.push({id: `t${++seq}`, cls: d.cls, box: d, conf: d.conf, hits: 1, misses: 0, firstMs: tMs, lastMs: tMs, hist: [{t: tMs, h: d.h}], sentAt: 0, confirmed: false, ttcS: null, src: d.src}); });

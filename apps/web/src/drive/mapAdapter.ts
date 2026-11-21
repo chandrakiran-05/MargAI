@@ -1,3 +1,4 @@
+import {loadGoogleMaps} from '../services/googleMaps';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type {LL} from './geo';
@@ -55,19 +56,8 @@ function leafletAdapter(host: HTMLElement, center: LL): MapAdapter {
   };
 }
 
-function loadGoogle(key: string): Promise<any> {
-  const w = window as any;
-  if (w.google?.maps?.OverlayView) return Promise.resolve(w.google.maps);
-  return new Promise((res, rej) => {
-    w.__driveGmapsReady = () => res(w.google.maps);
-    const s = document.createElement('script');
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&callback=__driveGmapsReady&loading=async`;
-    s.async = true; s.onerror = () => rej(new Error('gmaps'));
-    document.head.appendChild(s);
-  });
-}
 async function googleAdapter(host: HTMLElement, key: string, center: LL): Promise<MapAdapter> {
-  const gm = await loadGoogle(key);
+  const gm = await loadGoogleMaps(key);
   const map = new gm.Map(host, {center: {lat: center[0], lng: center[1]}, zoom: 17, disableDefaultUI: true, gestureHandling: 'greedy',
     styles: [{featureType: 'poi', stylers: [{visibility: 'off'}]}, {featureType: 'water', stylers: [{color: '#bfe6ff'}]}, {featureType: 'landscape', stylers: [{color: '#fff6e8'}]}]});
   class Ov extends gm.OverlayView {
