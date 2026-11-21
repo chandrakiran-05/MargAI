@@ -17,7 +17,8 @@ export function PhoneLocationMap({fix,heading,stale}:{fix:GPSFix|null;heading:nu
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(m);
       const dot=L.circleMarker([f.latitude,f.longitude],{radius:7,color:'#fff',weight:2,fillColor:'#526f3e',fillOpacity:1}).addTo(m);const accuracy=L.circle([f.latitude,f.longitude],{radius:f.accuracy,color:'#718b50',weight:1,fillOpacity:.1}).addTo(m);
       m.on('dragstart',()=>setFollow(false));m.on('tileerror',()=>setMessage('Map tiles are unavailable. GPS coordinates remain available.'));
-      handle={update:(next,_heading,following)=>{dot.setLatLng([next.latitude,next.longitude]);accuracy.setLatLng([next.latitude,next.longitude]).setRadius(next.accuracy);if(following)m.panTo([next.latitude,next.longitude],{animate:false});},destroy:()=>m.remove()};map.current=handle;setProvider('OpenStreetMap');
+      const resize=new ResizeObserver(()=>m.invalidateSize({animate:false}));resize.observe(container);
+      handle={update:(next,_heading,following)=>{dot.setLatLng([next.latitude,next.longitude]);accuracy.setLatLng([next.latitude,next.longitude]).setRadius(next.accuracy);if(following)m.panTo([next.latitude,next.longitude],{animate:false});},destroy:()=>{resize.disconnect();m.remove();}};map.current=handle;setProvider('OpenStreetMap');
     };
     const init=async()=>{
       if(!GOOGLE_KEY||!tryGoogle){await fallback();return;}

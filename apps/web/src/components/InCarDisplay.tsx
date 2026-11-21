@@ -1,5 +1,8 @@
 import {PhoneLocationMap} from './PhoneLocationMap';
-import type {GPSFix} from '../mobile/telemetry';
+import type {GPSFix,Telemetry} from '../mobile/telemetry';
+import {readPhoneTelemetry} from '../mobile/phoneReadings';
+import {RoadPhoneSensors} from './RoadPhoneSensors';
+import '../mobile.css';
 import {createPortal} from 'react-dom';
 import QRCode from 'qrcode';
 import { apiClient } from '../services/apiClient';
@@ -172,7 +175,10 @@ export const InCarDisplay: React.FC = () => {
   const [leftViewMode, setLeftViewMode] = useState<'camera' | 'road'>('camera');
 
   // Phone Cam Streams: Direct MediaStream or Base64 Frames
-  const [peerId] = useState<string>(() => `margai-${Math.floor(1000 + Math.random() * 9000)}`);
+  const [peerId,setPeerId] = useState<string>(() => {
+    try { const saved=sessionStorage.getItem('margai.display.id');if(saved&&/^margai-[A-Za-z0-9]{4,8}$/.test(saved))return saved; } catch {}
+    const id=`margai-${Math.floor(1000 + Math.random() * 9000)}`;try{sessionStorage.setItem('margai.display.id',id);}catch{}return id;
+  });
   const [verifiedPeerId, setVerifiedPeerId] = useState<string>('');
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [isWebRtcConnected, setIsWebRtcConnected] = useState<boolean>(false);
@@ -182,6 +188,8 @@ export const InCarDisplay: React.FC = () => {
   const lastImageAt = useRef(0), lastVideoAt = useRef(0), lastVideoTime = useRef(-1), phoneInferenceUntil = useRef(0);
   const packetReceiver = useRef<(data:any)=>void>(()=>{});
   const [phoneTelemetry, setPhoneTelemetry] = useState<{gps:GPSFix|null;speedKmh:number|null;heading:number|null;gForce:number|null}|null>(null);
+  const [phoneSensors,setPhoneSensors]=useState<Telemetry|null>(null);
+  const [sensorReceivedAt,setSensorReceivedAt]=useState(0);
   const [showPairModal, setShowPairModal] = useState<boolean>(false);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
 
@@ -270,6 +278,7 @@ export const InCarDisplay: React.FC = () => {
       });
 
       peer.on('error', (err: any) => {
+        if(err.type==='unavailable-id'){const id=`margai-${Math.floor(1000 + Math.random()*9000)}`;try{sessionStorage.setItem('margai.display.id',id);}catch{}setVerifiedPeerId('');setPeerId(id);}
         console.warn('Peer note:', err);
       });
     } catch (e) {
@@ -693,6 +702,7 @@ export const InCarDisplay: React.FC = () => {
       lastImageAt.current=Date.now();setPhoneCameraB64(data.camera_b64);setIsWebRtcConnected(true);setLeftViewMode('camera');setShowPairModal(false);
     }
     if(data.model_status)phoneInferenceUntil.current=Date.now()+4000;
+    if(data.telemetry){setPhoneSensors(readPhoneTelemetry(data.telemetry));setSensorReceivedAt(Date.now());}
     if(Array.isArray(data.hazards))ingestPhoneHazards(data.hazards);
     if(typeof data.speed_kmh==='number'&&data.speed_kmh>=0)setVehicleSpeed(Math.round(data.speed_kmh));
     if(Object.prototype.hasOwnProperty.call(data,'gps')){
@@ -829,8 +839,7 @@ export const InCarDisplay: React.FC = () => {
         </div>
       </div>
 
-      {phoneTelemetry && <div className="mb-3 border rounded bg-white px-4 py-3 text-xs text-slate-700 flex flex-wrap gap-5" role="status"><span>Phone GPS: {phoneTelemetry.gps?`${phoneTelemetry.gps.latitude.toFixed(6)}, ${phoneTelemetry.gps.longitude.toFixed(6)}`:'Waiting for location permission / fix'}</span><span>Measured speed: {phoneTelemetry.speedKmh===null?'Not reported':`${phoneTelemetry.speedKmh.toFixed(1)} km/h`}</span><span>Acceleration: {phoneTelemetry.gForce===null?'Not reported':`${phoneTelemetry.gForce.toFixed(2)} g`}</span></div>}
-      {phoneTelemetry?.gps && <PhoneLocationMap fix={phoneTelemetry.gps} heading={phoneTelemetry.heading} stale={feedClock-phoneTelemetry.gps.timestamp>15000}/>}
+      <RoadPhoneSensors readings={phoneSensors} receivedAt={sensorReceivedAt} now={feedClock}/>
       {/* AUTOMOTIVE TOUCHSCREEN BEZEL (16:9 DISPLAY) */}
       <div className="relative w-full aspect-[16/9] min-h-[440px] max-h-[640px] bg-[#0c0f17] border-[12px] sm:border-[16px] border-[#181c26] rounded-[28px] sm:rounded-[36px] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.95)] overflow-hidden flex flex-col select-none ring-1 ring-white/10">
         
@@ -853,11 +862,11 @@ export const InCarDisplay: React.FC = () => {
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 text-[11px]">
               <Wifi className="w-3.5 h-3.5 text-slate-300" />
-              <span className="text-slate-300 font-bold">5G</span>
+              <span className="text-slate-300 font-bold">{hasLiveCamera?'Live feed':'Waiting'}</span>
             </div>
             <div className="flex items-center gap-1 text-[11px]">
               <Battery className="w-3.5 h-3.5 text-slate-300" />
-              <span>98%</span>
+              <span>Phone sensors</span>
             </div>
             <div className="font-bold text-white tracking-wide text-xs">
               {clockStr}
@@ -880,7 +889,7 @@ export const InCarDisplay: React.FC = () => {
               </div>
               <div>
                 <div className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight leading-none font-mono drop-shadow-md">
-                  {phoneTelemetry?.speedKmh===null?'—':vehicleSpeed}
+                  {phoneTelemetry?.speedKmh==null?'—':Math.round(phoneTelemetry.speedKmh)}
                 </div>
                 <div className="text-[11px] font-mono text-slate-300 uppercase tracking-widest mt-0.5 drop-shadow">
                   km/h
@@ -908,15 +917,15 @@ export const InCarDisplay: React.FC = () => {
                   }}
                   onLoadedData={()=>{lastVideoAt.current=Date.now();setVideoReady(true);setShowPairModal(false);}}
                   onError={()=>setVideoReady(false)}
-                  className={`w-full h-full object-fill ${cameraStream ? 'block' : 'hidden'}`}
+                  className={`absolute inset-0 w-full h-full object-contain ${cameraStream ? 'block' : 'hidden'}`}
                 />
 
                 {/* 2. Base64 Frame Stream from Smartphone (DataConnection or BroadcastChannel fallback) */}
-                {hasFreshImage && !videoReady && (
+                {hasFreshImage && (
                   <img
                     src={phoneCameraB64}
                     alt="Live phone camera frame"
-                    className="absolute inset-0 w-full h-full object-fill"
+                    className="absolute inset-0 w-full h-full object-contain"
                   />
                 )}
 
@@ -1261,7 +1270,7 @@ export const InCarDisplay: React.FC = () => {
             <div className="px-4 z-10 flex items-center justify-between">
               <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-[#141924]/90 border border-white/10 text-white text-xs font-semibold backdrop-blur-md">
                 <span className="text-lg text-[#38bdf8] font-bold">↱</span>
-                <span>{phoneTelemetry?.gps?`${phoneTelemetry.gps.latitude.toFixed(5)}, ${phoneTelemetry.gps.longitude.toFixed(5)}`:'Demo route'}</span>
+                <span>{phoneTelemetry?.gps?`${phoneTelemetry.gps.latitude.toFixed(5)}, ${phoneTelemetry.gps.longitude.toFixed(5)}`:'Waiting for phone GPS'}</span>
               </div>
 
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-[10px] font-mono text-emerald-300">
@@ -1270,37 +1279,9 @@ export const InCarDisplay: React.FC = () => {
               </div>
             </div>
 
-            {/* DARK VECTOR ROAD MAP */}
-            <div className="relative flex-1 w-full h-full overflow-hidden">
-              <svg viewBox="0 0 600 360" className="absolute inset-0 w-full h-full">
-                <rect width="600" height="360" fill="#0d111a" />
-                <path d="M40 0 L40 360 M120 0 L120 360 M200 0 L200 360 M320 0 L320 360 M440 0 L440 360 M520 0 L520 360" stroke="#1a2233" strokeWidth="2" />
-                <path d="M0 60 L600 60 M0 140 L600 140 M0 220 L600 220 M0 300 L600 300" stroke="#1a2233" strokeWidth="2" />
-                <path d="M60 360 Q180 260 220 180 T420 80 L580 40" stroke="#242e42" strokeWidth="18" fill="none" strokeLinecap="round" />
-                <path d="M20 180 L220 180 L360 360" stroke="#242e42" strokeWidth="14" fill="none" strokeLinecap="round" />
-                <path d="M180 340 L210 240 L240 180 Q260 140 320 120 L440 90 L520 70" stroke="#0284c7" strokeWidth="10" fill="none" strokeLinecap="round" opacity="0.5" />
-                <path d="M180 340 L210 240 L240 180 Q260 140 320 120 L440 90 L520 70" stroke="#38bdf8" strokeWidth="6" fill="none" strokeLinecap="round" />
-
-                {topHazard && !isClearedState && (
-                  <g transform="translate(240, 180)">
-                    <circle r="16" fill="#ef4444" opacity="0.3" className="animate-ping" />
-                    <circle r="10" fill="#ef4444" stroke="#ffffff" strokeWidth="2" />
-                    <text y="4" textAnchor="middle" fontSize="9" fontWeight="bold" fill="#ffffff">
-                      !
-                    </text>
-                  </g>
-                )}
-
-                <g transform="translate(195, 290) rotate(-15)">
-                  <circle r="18" fill="#38bdf8" opacity="0.3" className="animate-pulse" />
-                  <circle r="10" fill="#0284c7" stroke="#ffffff" strokeWidth="2" />
-                  <path d="M0 -6 L5 4 L0 2 L-5 4 Z" fill="#ffffff" />
-                </g>
-              </svg>
-
-              <div className="absolute bottom-3 left-4 bg-[#131924]/90 border border-white/10 px-3 py-1 rounded-lg text-[10px] font-mono text-slate-300">
-                Upcoming route
-              </div>
+            {/* Actual phone coordinates drive the Google map; no illustrative route is substituted. */}
+            <div className="relative flex-1 w-full overflow-auto road-live-map">
+              <PhoneLocationMap fix={phoneSensors?.gps??phoneTelemetry?.gps??null} heading={phoneSensors?.gps?.heading??phoneSensors?.heading??phoneTelemetry?.heading??null} stale={sensorReceivedAt?feedClock-sensorReceivedAt>5000||feedClock-(phoneSensors?.gps?.timestamp??0)>15000:!phoneTelemetry?.gps||feedClock-phoneTelemetry.gps.timestamp>15000}/>
 
               {/* Picture-in-Picture Phone Camera Feed in Corner */}
               {leftViewMode === 'road' && (
