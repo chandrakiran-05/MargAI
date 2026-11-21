@@ -11,8 +11,6 @@
     "@margai/contracts": "*",
     "@margai/localization": "*",
     "@margai/risk-engine": "*",
-    "@tensorflow-models/coco-ssd": "^2.2.3",
-    "@tensorflow/tfjs": "^4.22.0",
     "clsx": "^2.1.0",
     "lucide-react": "^0.344.0",
     "peerjs": "^1.5.5",

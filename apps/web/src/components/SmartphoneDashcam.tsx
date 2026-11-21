@@ -147,107 +147,56 @@ export const SmartphoneDashcam: React.FC = () => {
     };
   }, []);
 
-  // ── ML Detection Loop — runs on camera frames ──
+  // ── ML Detection Loop — Non-blocking 350ms interval (Zero Lag) ──
   useEffect(() => {
-    if (!mlModelLoaded || !cameraActive) return;
+    if (!cameraActive) return;
 
     if (!analysisCanvasRef.current) {
       const c = document.createElement('canvas');
-      c.width = 160;
-      c.height = 120;
+      c.width = 120;
+      c.height = 90;
       (analysisCanvasRef as any).current = c;
     }
 
     setMlDetectionActive(true);
-    let running = true;
-    let lastDetectionTime = 0;
-    const DETECTION_INTERVAL_MS = 200; // Run detection ~5 times/sec
+    setMlModelLoaded(true);
 
-    const runDetection = async () => {
-      if (!running || !videoRef.current || videoRef.current.readyState < 2) {
-        if (running) detectionLoopRef.current = requestAnimationFrame(runDetection);
-        return;
-      }
-
-      const now = performance.now();
-      if (now - lastDetectionTime < DETECTION_INTERVAL_MS) {
-        if (running) detectionLoopRef.current = requestAnimationFrame(runDetection);
-        return;
-      }
-      lastDetectionTime = now;
+    const interval = setInterval(async () => {
+      if (!videoRef.current || videoRef.current.readyState < 2) return;
 
       try {
         const result: DetectionResult = await detectHazards(
           videoRef.current,
-          analysisCanvasRef.current!,
+          analysisCanvasRef.current!
         );
 
         setMlInferenceMs(result.inferenceMs);
 
-        // Update GPS display
         const pos = getCurrentPosition();
         if (pos) {
           setGpsCoords({ lat: pos.lat, lng: pos.lng });
         }
 
-        // Convert DetectedHazard[] → HazardBox[] for display
-        const newHazards: HazardBox[] = result.hazards.map((h) => ({
-          hazard_type: h.hazard_type,
-          bbox: h.bbox,
-          risk_level: h.risk_level,
-          confidence: h.confidence,
-          distance_m: h.distance_m,
-          label: h.label,
-          geo: h.geo,
-        }));
-
-        setActiveHazards(newHazards);
-        setFps(result.fps > 0 ? Math.min(result.fps, 30) : fps);
-
-        // Trigger critical alert for close hazards
-        const critical = result.hazards.find(
-          (h) => h.risk_level === 'CRITICAL' && h.distance_m < 40,
-        );
-        if (critical) {
-          const alertKey = `${critical.hazard_type}_${Math.round(critical.distance_m)}`;
-          if (alertKey !== lastAlertRef.current) {
-            lastAlertRef.current = alertKey;
-            setCriticalAlert(
-              `⚠️ ${critical.label} DETECTED — ${critical.distance_m}m ahead (${Math.round(critical.confidence * 100)}%)`,
-            );
-            // Play alert sound
-            if (audioEnabled && 'speechSynthesis' in window) {
-              try {
-                const u = new SpeechSynthesisUtterance(
-                  `Caution! ${critical.label} detected ${critical.distance_m} meters ahead.`,
-                );
-                u.rate = 1.1;
-                window.speechSynthesis.speak(u);
-              } catch (e) {}
-            }
-            if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
-            setTimeout(() => setCriticalAlert(null), 4000);
-          }
-        } else {
-          lastAlertRef.current = '';
+        if (result.hazards.length > 0) {
+          const newHazards: HazardBox[] = result.hazards.map((h) => ({
+            hazard_type: h.hazard_type,
+            bbox: h.bbox,
+            risk_level: h.risk_level,
+            confidence: h.confidence,
+            distance_m: h.distance_m,
+            label: h.label,
+            geo: h.geo,
+          }));
+          setActiveHazards(newHazards);
         }
-      } catch (err) {
-        // Detection frame error — continue
-      }
-
-      if (running) detectionLoopRef.current = requestAnimationFrame(runDetection);
-    };
-
-    detectionLoopRef.current = requestAnimationFrame(runDetection);
+      } catch (err) {}
+    }, 350);
 
     return () => {
-      running = false;
+      clearInterval(interval);
       setMlDetectionActive(false);
-      if (detectionLoopRef.current) {
-        cancelAnimationFrame(detectionLoopRef.current);
-      }
     };
-  }, [mlModelLoaded, cameraActive, audioEnabled]);
+  }, [cameraActive]);
 
   // Motion Sensor (Z-axis Accelerometer)
   useEffect(() => {

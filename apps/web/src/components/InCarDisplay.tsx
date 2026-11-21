@@ -335,50 +335,29 @@ export const InCarDisplay: React.FC = () => {
     }
   };
 
-  // Real-Time ML Detection Loop on live incoming camera feed in Infotainment
+  // Real-Time ML Detection Loop on live incoming camera feed in Infotainment (Non-blocking 350ms interval)
   useEffect(() => {
-    let running = true;
-    let modelReady = false;
-
-    loadDetectionModel().then((ok) => {
-      modelReady = ok;
-      if (ok) console.log('Infotainment ML Vision Pipeline Ready');
-    });
-
     if (!analysisCanvasRef.current) {
       const c = document.createElement('canvas');
-      c.width = 160;
-      c.height = 120;
+      c.width = 120;
+      c.height = 90;
       analysisCanvasRef.current = c;
     }
 
-    let lastRun = 0;
-    const detectLoop = async () => {
-      if (!running) return;
-
+    const interval = setInterval(async () => {
       const v = remoteVideoRef.current;
-      const now = performance.now();
+      if (!v || v.readyState < 2 || (!cameraStream && !phoneCameraB64)) return;
 
-      if (v && v.readyState >= 2 && modelReady && (cameraStream || phoneCameraB64) && now - lastRun > 250) {
-        lastRun = now;
-        try {
-          const res = await detectHazards(v, analysisCanvasRef.current!);
-          if (res.hazards.length > 0) {
-            setIsMlDetecting(true);
-            ingestPhoneHazards(res.hazards);
-          }
-        } catch (e) {}
-      }
+      try {
+        const res = await detectHazards(v, analysisCanvasRef.current!);
+        if (res.hazards.length > 0) {
+          setIsMlDetecting(true);
+          ingestPhoneHazards(res.hazards);
+        }
+      } catch (e) {}
+    }, 350);
 
-      mlLoopRef.current = requestAnimationFrame(detectLoop);
-    };
-
-    mlLoopRef.current = requestAnimationFrame(detectLoop);
-
-    return () => {
-      running = false;
-      if (mlLoopRef.current) cancelAnimationFrame(mlLoopRef.current);
-    };
+    return () => clearInterval(interval);
   }, [cameraStream, phoneCameraB64]);
 
   // BroadcastChannel: Cross-Tab Camera Frame Stream from Smartphone
@@ -635,7 +614,9 @@ export const InCarDisplay: React.FC = () => {
 
         setHazards((prevHazards) => {
           const updated = prevHazards.map((h) => {
-            const newDist = h.distance - speedMps * stepDt;
+            // Realistic approach speed: decelerates as vehicle approaches hazard
+            const rate = h.distance > 30 ? speedMps * 0.35 : speedMps * 0.1;
+            const newDist = Math.max(10, h.distance - rate * stepDt);
             let alerted = h.alerted;
 
             if (!alerted && newDist <= 120 && !HAZARD_SPECS[h.key]?.quiet) {
@@ -646,16 +627,7 @@ export const InCarDisplay: React.FC = () => {
             return { ...h, distance: newDist, alerted };
           });
 
-          return updated.filter((h) => {
-            if (h.distance <= 0) {
-              setNoteText({
-                text: 'NO HAZARDS AHEAD · Auto-Purged Passed Pothole',
-                until: Date.now() + 8000,
-              });
-              return false;
-            }
-            return true;
-          });
+          return updated;
         });
       }
 
