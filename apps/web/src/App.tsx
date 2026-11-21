@@ -14,9 +14,9 @@ export const App: React.FC = () => {
   // Check URL query parameters for direct tablet/phone mount
   const search = typeof window !== 'undefined' ? window.location.search : '';
   const isPhoneUrl = search.includes('smartphone') || search.includes('phone');
-  const isInCarUrl = search.includes('in-car') || search.includes('cockpit') || search.includes('infotainment');
+  const isCommandCenterUrl = search.includes('command-center') || search.includes('3-pane');
 
-  const defaultTab: TabType = isPhoneUrl ? 'smartphone' : isInCarUrl ? 'in-car' : 'command-center';
+  const defaultTab: TabType = isPhoneUrl ? 'smartphone' : isCommandCenterUrl ? 'command-center' : 'in-car';
   const [currentTab, setCurrentTab] = useState<TabType>(defaultTab);
   const [selectedLanguage, setSelectedLanguage] = useState<string>('hi');
   const [isBackendConnected, setIsBackendConnected] = useState<boolean>(true);

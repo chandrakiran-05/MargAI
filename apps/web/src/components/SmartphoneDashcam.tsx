@@ -17,7 +17,10 @@ import {
   ShieldAlert,
   Flame,
   X,
+  Link,
+  Check,
 } from 'lucide-react';
+import Peer from 'peerjs';
 
 interface HazardBox {
   hazard_type: string;
@@ -31,10 +34,21 @@ interface HazardBox {
 export const SmartphoneDashcam: React.FC = () => {
   const [cameraActive, setCameraActive] = useState<boolean>(false);
   const [isStreaming, setIsStreaming] = useState<boolean>(true);
-  const [videoSource, setVideoSource] = useState<'sample_video' | 'camera' | 'custom_file'>('sample_video');
+  const [videoSource, setVideoSource] = useState<'sample_video' | 'camera' | 'custom_file'>('camera');
   const [sourceNotice, setSourceNotice] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
   const [audioEnabled, setAudioEnabled] = useState<boolean>(true);
+
+  // WebRTC Pairing to Infotainment
+  const [pairTarget, setPairTarget] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return new URLSearchParams(window.location.search).get('pair') || '';
+    }
+    return '';
+  });
+  const [manualPairInput, setManualPairInput] = useState<string>('');
+  const [isPeerStreaming, setIsPeerStreaming] = useState<boolean>(false);
+  const peerInstanceRef = useRef<Peer | null>(null);
 
   // Live Telemetry from Smartphone Sensors
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number }>({ lat: 12.9716, lng: 77.5946 });
@@ -71,10 +85,9 @@ export const SmartphoneDashcam: React.FC = () => {
   const streamRef = useRef<MediaStream | null>(null);
   const bcRef = useRef<BroadcastChannel | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const waveformAnimRef = useRef<number | null>(null);
   const waveformHistoryRef = useRef<number[]>(Array(50).fill(0));
 
-  // Initialize BroadcastChannel & WebSocket for Zero-Latency Sync with In-Car Display
+  // Initialize BroadcastChannel & WebSocket
   useEffect(() => {
     try {
       bcRef.current = new BroadcastChannel('margai_road_telemetry');
@@ -119,6 +132,43 @@ export const SmartphoneDashcam: React.FC = () => {
     return () => window.removeEventListener('devicemotion', handleMotion);
   }, []);
 
+  // WebRTC Peer Connection to Infotainment System
+  const connectToCockpitPeer = (target: string) => {
+    if (!target) return;
+    try {
+      if (peerInstanceRef.current) peerInstanceRef.current.destroy();
+      const peer = new Peer();
+      peerInstanceRef.current = peer;
+
+      peer.on('open', (id) => {
+        console.log('Smartphone Peer open, calling:', target);
+        let activeStream = streamRef.current;
+        if (!activeStream && videoRef.current && (videoRef.current as any).captureStream) {
+          activeStream = (videoRef.current as any).captureStream();
+        }
+
+        if (activeStream) {
+          const call = peer.call(target, activeStream);
+          call.on('close', () => setIsPeerStreaming(false));
+          setIsPeerStreaming(true);
+          setSourceNotice(`Streaming camera feed to Infotainment (${target})`);
+        }
+      });
+
+      peer.on('error', (err) => {
+        console.warn('Peer connection note:', err);
+      });
+    } catch (e) {
+      console.error('Peer connection error:', e);
+    }
+  };
+
+  useEffect(() => {
+    if (pairTarget && (streamRef.current || cameraActive)) {
+      connectToCockpitPeer(pairTarget);
+    }
+  }, [pairTarget, cameraActive]);
+
   // Auto-start video or camera on mount
   useEffect(() => {
     startStreamSource();
@@ -145,9 +195,11 @@ export const SmartphoneDashcam: React.FC = () => {
           await videoRef.current.play();
           setCameraActive(true);
           setIsStreaming(true);
-        } catch (e) {
-          // fallback
-        }
+          if (pairTarget && (videoRef.current as any).captureStream) {
+            streamRef.current = (videoRef.current as any).captureStream();
+            connectToCockpitPeer(pairTarget);
+          }
+        } catch (e) {}
       }
       return;
     }
@@ -168,6 +220,9 @@ export const SmartphoneDashcam: React.FC = () => {
             videoRef.current?.play();
             setCameraActive(true);
             setIsStreaming(true);
+            if (pairTarget) {
+              connectToCockpitPeer(pairTarget);
+            }
           };
         }
       } catch (err) {
@@ -206,13 +261,12 @@ export const SmartphoneDashcam: React.FC = () => {
       const h = canvas.height;
       ctx.clearRect(0, 0, w, h);
 
-      // Shift history
       waveformHistoryRef.current.shift();
       const baseJitter = (Math.random() - 0.5) * 4;
       const spikeVal = isBumpSpike ? (Math.random() > 0.5 ? 24 : -24) : baseJitter;
       waveformHistoryRef.current.push(spikeVal);
 
-      // Draw baseline grid line
+      // Baseline
       ctx.strokeStyle = '#1e293b';
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -220,10 +274,9 @@ export const SmartphoneDashcam: React.FC = () => {
       ctx.lineTo(w, h / 2);
       ctx.stroke();
 
-      // Draw Waveform Line
+      // Waveform line
       ctx.lineWidth = 2.5;
       const step = w / (waveformHistoryRef.current.length - 1);
-
       ctx.beginPath();
       waveformHistoryRef.current.forEach((val, i) => {
         const x = i * step;
@@ -232,7 +285,6 @@ export const SmartphoneDashcam: React.FC = () => {
         else ctx.lineTo(x, y);
       });
 
-      // Gradient color: Blue base line, glowing Orange/Yellow at spike
       const grad = ctx.createLinearGradient(0, 0, w, 0);
       grad.addColorStop(0, '#38bdf8');
       grad.addColorStop(0.65, isBumpSpike ? '#f59e0b' : '#38bdf8');
@@ -248,7 +300,7 @@ export const SmartphoneDashcam: React.FC = () => {
     return () => cancelAnimationFrame(animId);
   }, [isBumpSpike]);
 
-  // Frame Capture for Broadcast to Infotainment
+  // Frame Capture for BroadcastChannel & WebSocket
   useEffect(() => {
     const interval = setInterval(() => {
       if (!videoRef.current || !canvasRef.current) return;
@@ -263,7 +315,7 @@ export const SmartphoneDashcam: React.FC = () => {
       ctx.drawImage(v, 0, 0, 320, 180);
       const b64 = c.toDataURL('image/jpeg', 0.55);
 
-      // Broadcast over channel & ws
+      // Send over BroadcastChannel to Infotainment
       bcRef.current?.postMessage({
         camera_b64: b64,
         speed_kmh: speedKmh,
@@ -309,7 +361,6 @@ export const SmartphoneDashcam: React.FC = () => {
       } catch (e) {}
     }
 
-    // Reset spike after delay
     setTimeout(() => {
       setIsBumpSpike(false);
       setZAccelG(1.02);
@@ -323,25 +374,23 @@ export const SmartphoneDashcam: React.FC = () => {
       {/* WINDSHIELD SUCTION MOUNT BRACKET FRAME (Slide 6.1 & Slide 10.1) */}
       <div className="relative w-full max-w-3xl flex flex-col items-center">
         
-        {/* Silver Suction Bracket Top Arm (Attached to Windshield Glass) */}
+        {/* Silver Suction Arm */}
         <div className="w-36 h-8 bg-gradient-to-b from-slate-300 via-slate-400 to-slate-500 rounded-t-2xl shadow-lg border-t border-white/40 flex items-center justify-center relative -mb-2 z-0">
           <div className="w-14 h-2.5 bg-slate-700/80 rounded-full border border-slate-600 shadow-inner"></div>
         </div>
 
-        {/* Suction Clamp Pivot Ring Behind Phone */}
+        {/* Pivot Ring Behind Phone */}
         <div className="w-48 h-5 bg-gradient-to-b from-slate-400 to-slate-600 rounded-lg shadow-md -mb-2 z-0 border border-slate-400"></div>
 
-        {/* SMARTPHONE CHASSIS (HORIZONTAL WINDSHIELD CLAMP MOUNT) */}
+        {/* SMARTPHONE CHASSIS */}
         <div className="relative w-full aspect-[16/9] min-h-[380px] max-h-[540px] bg-black border-[10px] sm:border-[14px] border-[#1a1f2c] rounded-[32px] sm:rounded-[40px] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.95)] overflow-hidden flex flex-col z-10 ring-1 ring-white/20">
           
           {/* Top Bar with Badges: THERMAL: WARM and Google Camera */}
           <div className="absolute top-2.5 left-3 right-3 z-30 flex items-center justify-between text-xs font-mono pointer-events-none">
-            {/* Close / Nav icon */}
             <div className="w-6 h-6 rounded-full bg-black/60 border border-white/20 flex items-center justify-center text-white text-xs">
               ✕
             </div>
 
-            {/* Badges on Right */}
             <div className="flex items-center gap-2">
               <span className="px-2.5 py-0.5 rounded-full bg-[#f59e0b] text-black font-extrabold text-[10px] tracking-wider uppercase shadow-md">
                 THERMAL: WARM
@@ -366,7 +415,7 @@ export const SmartphoneDashcam: React.FC = () => {
             />
             <canvas ref={canvasRef} className="hidden" />
 
-            {/* BOUNDING BOX 1: POTHOLE 92% (Yellow box matching Slide 10.1 & 6.1) */}
+            {/* BOUNDING BOX 1: POTHOLE 92% */}
             <div
               className="absolute border-2 border-[#f59e0b] bg-[#f59e0b]/15 pointer-events-none z-20 shadow-[0_0_15px_rgba(245,158,11,0.4)]"
               style={{
@@ -381,7 +430,7 @@ export const SmartphoneDashcam: React.FC = () => {
               </span>
             </div>
 
-            {/* BOUNDING BOX 2: PEDESTRIAN 55% / 88% (Red box matching Slide 10.1 & 6.1) */}
+            {/* BOUNDING BOX 2: PEDESTRIAN 88% */}
             <div
               className="absolute border-2 border-[#ef4444] bg-[#ef4444]/15 pointer-events-none z-20 shadow-[0_0_15px_rgba(239,68,68,0.5)]"
               style={{
@@ -396,7 +445,6 @@ export const SmartphoneDashcam: React.FC = () => {
               </span>
             </div>
 
-            {/* Critical Alert Toast if Bump Felt */}
             {criticalAlert && (
               <div className="absolute top-12 left-6 right-6 z-40 bg-[#ef4444]/95 border-2 border-white text-white p-2.5 rounded-xl text-center font-bold text-xs shadow-2xl backdrop-blur-md animate-bounce">
                 💥 {criticalAlert}
@@ -404,10 +452,10 @@ export const SmartphoneDashcam: React.FC = () => {
             )}
           </div>
 
-          {/* BOTTOM SECTION INSIDE PHONE: OSCILLOSCOPE & G-FORCE METER (Slide 6.1 & 10.1) */}
+          {/* BOTTOM SECTION: OSCILLOSCOPE & G-FORCE METER (Slide 6.1 & 10.1) */}
           <div className="relative w-full bg-[#0a0d14]/95 border-t border-white/[0.08] p-2 sm:p-3 px-3 sm:px-4 z-30 flex flex-col gap-1.5 font-mono">
             
-            {/* Status Pills: THERMAL: WARM | WEBSOCKET: STREAMING */}
+            {/* Status Badges */}
             <div className="flex items-center justify-between text-[10px]">
               <div className="flex items-center gap-2">
                 <span className="px-2 py-0.5 rounded-full bg-[#f59e0b]/20 border border-[#f59e0b]/40 text-[#f59e0b] font-bold uppercase">
@@ -420,18 +468,21 @@ export const SmartphoneDashcam: React.FC = () => {
 
               <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 font-bold uppercase text-[9px]">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
-                <span>WEBSOCKET: STREAMING</span>
+                <span>
+                  {isPeerStreaming
+                    ? `STREAMING TO COCKPIT (${pairTarget})`
+                    : 'WEBSOCKET: STREAMING'}
+                </span>
               </div>
             </div>
 
-            {/* ACCELEROMETER SHOCK OSCILLOSCOPE WAVEFORM */}
+            {/* ACCELEROMETER SHOCK OSCILLOSCOPE */}
             <div className="relative w-full bg-[#06080e] border border-white/10 rounded-xl p-1.5 px-2 flex flex-col justify-between overflow-hidden">
               <div className="flex items-center justify-between text-[10px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">
                 <span>ACCELEROMETER SHOCK</span>
                 <span className="text-[9px] text-slate-500">...</span>
               </div>
 
-              {/* Real-Time Waveform Canvas */}
               <div className="relative w-full h-11 flex items-center">
                 <canvas
                   ref={waveformCanvasRef}
@@ -440,7 +491,7 @@ export const SmartphoneDashcam: React.FC = () => {
                   className="w-full h-full object-contain"
                 />
 
-                {/* IMU SHOCK SPIKE Pointer Tag (Matching Slide 10.1 & 6.1) */}
+                {/* IMU SHOCK SPIKE Pointer Tag */}
                 <div
                   className={`absolute top-0 right-1/4 transition-opacity duration-300 flex flex-col items-center ${
                     isBumpSpike ? 'opacity-100 scale-105' : 'opacity-85'
@@ -453,13 +504,12 @@ export const SmartphoneDashcam: React.FC = () => {
                 </div>
               </div>
 
-              {/* G-FORCE Z-AXIS HORIZONTAL METER BAR (Slide 6.1) */}
+              {/* G-FORCE Z-AXIS METER BAR */}
               <div className="w-full mt-1 flex items-center gap-2 text-[10px]">
                 <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px] whitespace-nowrap">
                   G-force Z-axis
                 </span>
 
-                {/* Gradient Meter Bar */}
                 <div className="relative flex-1 h-2.5 rounded-full bg-slate-800 overflow-hidden border border-white/10">
                   <div
                     className="h-full bg-gradient-to-r from-blue-500 via-amber-400 to-red-500 transition-all duration-150 rounded-full"
@@ -477,12 +527,12 @@ export const SmartphoneDashcam: React.FC = () => {
           </div>
         </div>
 
-        {/* Side Clamp Pads holding phone */}
+        {/* Side Clamp Pads */}
         <div className="absolute top-1/2 -left-2.5 -translate-y-1/2 w-3.5 h-20 bg-slate-700 rounded-r-md border border-slate-500 shadow-lg z-20"></div>
         <div className="absolute top-1/2 -right-2.5 -translate-y-1/2 w-3.5 h-20 bg-slate-700 rounded-l-md border border-slate-500 shadow-lg z-20"></div>
       </div>
 
-      {/* INTERACTIVE CONTROLS BAR (BELOW MOUNT) */}
+      {/* CONTROLS & MANUAL COCKPIT PAIRING BAR */}
       <div className="mt-4 flex flex-wrap items-center justify-center gap-2 bg-[#0d1322] border border-[#1e293b] p-2.5 px-4 rounded-2xl text-xs font-mono">
         <button
           onClick={() => triggerBumpSim(2.4)}
@@ -494,20 +544,20 @@ export const SmartphoneDashcam: React.FC = () => {
 
         <div className="flex items-center bg-[#090D16] border border-[#1E293B] rounded-xl p-0.5">
           <button
-            onClick={() => setVideoSource('sample_video')}
-            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-              videoSource === 'sample_video' ? 'bg-[#4285F4] text-white' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            🛣️ Road Loop
-          </button>
-          <button
             onClick={() => setVideoSource('camera')}
             className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
               videoSource === 'camera' ? 'bg-[#4285F4] text-white' : 'text-slate-400 hover:text-white'
             }`}
           >
             📱 Phone Cam
+          </button>
+          <button
+            onClick={() => setVideoSource('sample_video')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+              videoSource === 'sample_video' ? 'bg-[#4285F4] text-white' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            🛣️ Road Loop
           </button>
           <button
             onClick={() => fileInputRef.current?.click()}
@@ -526,20 +576,26 @@ export const SmartphoneDashcam: React.FC = () => {
           />
         </div>
 
-        {/* Speed Controls */}
-        <div className="flex items-center gap-1 bg-[#090D16] border border-[#1E293B] rounded-xl p-0.5 px-1.5">
-          <span className="text-[10px] text-slate-400">Speed:</span>
-          {[45, 65, 90].map((s) => (
-            <button
-              key={s}
-              onClick={() => setSpeedKmh(s)}
-              className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                speedKmh === s ? 'bg-[#38bdf8] text-slate-900' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              {s}k
-            </button>
-          ))}
+        {/* Cockpit WebRTC Pair Input */}
+        <div className="flex items-center gap-1 bg-[#090D16] border border-[#1E293B] rounded-xl p-0.5 px-2">
+          <span className="text-[10px] text-slate-400">Cockpit ID:</span>
+          <input
+            type="text"
+            value={manualPairInput || pairTarget}
+            onChange={(e) => setManualPairInput(e.target.value)}
+            placeholder="margai-1234"
+            className="bg-transparent border-none text-white text-xs w-24 px-1 focus:outline-none font-mono"
+          />
+          <button
+            onClick={() => {
+              const code = manualPairInput || pairTarget;
+              setPairTarget(code);
+              connectToCockpitPeer(code);
+            }}
+            className="px-2 py-0.5 rounded bg-[#38bdf8] text-slate-900 text-[10px] font-bold"
+          >
+            Link
+          </button>
         </div>
       </div>
     </div>
