@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import http from 'http';
 import dotenv from 'dotenv';
 import { createExpressApp } from './server';

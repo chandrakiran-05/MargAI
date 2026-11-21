@@ -6,14 +6,25 @@ import {
   Radio,
   Smartphone,
   Navigation,
-  Music,
-  Fan,
-  Thermometer,
+  Eye,
+  Camera,
+  X,
+  ExternalLink,
+  RotateCcw,
   ShieldAlert,
-  ChevronRight,
-  Play,
-  Pause,
-  SkipForward,
+  AlertTriangle,
+  CheckCircle2,
+  MapPin,
+  Flame,
+  Grid,
+  Phone,
+  MessageSquare,
+  Music,
+  Mic,
+  Wifi,
+  Battery,
+  Car,
+  QrCode,
 } from 'lucide-react';
 import { DriverAlert, HazardType, RiskLevel, LocalizedMessages } from '@margai/contracts';
 import { alertAudio } from '../audio/alertAudio.js';
@@ -28,182 +39,248 @@ interface ActiveHazard {
   localized: LocalizedMessages;
 }
 
-export const InfotainmentHUD: React.FC = () => {
-  // Tesla MCU State
-  const [vehicleSpeed, setVehicleSpeed] = useState<number>(54); // km/h
-  const [roadTiltDeg, setRoadTiltDeg] = useState<number>(0);
-  const [isBumpShockActive, setIsBumpShockActive] = useState<boolean>(false);
-  const [clockStr, setClockStr] = useState<string>('12:45 PM');
-  const [currentLang, setCurrentLang] = useState<'en' | 'hi' | 'ta' | 'te' | 'kn'>('en');
-  const [langMenuOpen, setLangMenuOpen] = useState<boolean>(false);
-  const [muted, setMuted] = useState<boolean>(false);
+const HAZARD_TEMPLATES: Record<
+  string,
+  { type: HazardType; riskLevel: RiskLevel; icon: string; name: string; localized: LocalizedMessages }
+> = {
+  pothole: {
+    type: 'pothole',
+    riskLevel: 'caution',
+    icon: '🕳️',
+    name: 'Pothole',
+    localized: {
+      en: 'Pothole ahead. Slow down.',
+      hi: 'आगे गड्ढा है। गति धीमी करें।',
+      ta: 'முன்னே குழி உள்ளது. வேகத்தைக் குறையுங்கள்.',
+      te: 'ముందు గుంత ఉంది. వేగం తగ్గించండి.',
+      kn: 'ಮುಂದೆ ಗುಂಡಿ ಇದೆ. ವೇಗ ಕಡಿಮೆ ಮಾಡಿ.',
+    },
+  },
+  pedestrian: {
+    type: 'pedestrian',
+    riskLevel: 'urgent',
+    icon: '🚶',
+    name: 'Pedestrian',
+    localized: {
+      en: 'Person crossing ahead. Brake gently.',
+      hi: 'आगे कोई सड़क पार कर रहा है। सावधान।',
+      ta: 'முன்னே ஒருவர் சாலையைக் கடக்கிறார். கவனம்.',
+      te: 'ముందు ఒకరు రోడ్డు దాటుతున్నారు. నెమ్మదిగా బ్రేక్ వేయండి.',
+      kn: 'ಮುಂದೆ ಒಬ್ಬರು ರಸ್ತೆ ದಾಟುತ್ತಿದ್ದಾರೆ. ನಿಧಾನವಾಗಿ ಬ್ರೇಕ್ ಹಾಕಿ.',
+    },
+  },
+  waterlogging: {
+    type: 'waterlogging',
+    riskLevel: 'caution',
+    icon: '🌊',
+    name: 'Waterlogging',
+    localized: {
+      en: 'Waterlogging ahead. Drive slowly.',
+      hi: 'आगे जलभराव है। धीरे चलें।',
+      ta: 'முன்னே தேங்கிய நீர் உள்ளது. மெதுவாகச் செல்லவும்.',
+      te: 'ముందు నీరు నిలిచింది. నెమ్మదిగా వెళ్లండి.',
+      kn: 'ಮುಂದೆ ನೀರು ನಿಂತಿದೆ. ನಿಧಾನವಾಗಿ ಚಲಿಸಿ.',
+    },
+  },
+  cattle: {
+    type: 'cattle',
+    riskLevel: 'caution',
+    icon: '🐄',
+    name: 'Stray Cattle',
+    localized: {
+      en: 'Stray cattle on road. Be alert.',
+      hi: 'सड़क पर मवेशी हैं। सतर्क रहें।',
+      ta: 'சாலையில் கால்நடைகள் உள்ளன. எச்சரிக்கை.',
+      te: 'రోడ్డుపై పశువులు ఉన్నాయి. அప్రమత్తంగా ఉండండి.',
+      kn: 'ರಸ್ತೆಯಲ್ಲಿ ದನಗಳಿವೆ. ಜಾಗರೂಕರಾಗಿರಿ.',
+    },
+  },
+  curve: {
+    type: 'sharp_curve',
+    riskLevel: 'information',
+    icon: '↪️',
+    name: 'Sharp Curve',
+    localized: {
+      en: 'Sharp curve ahead. Reduce speed.',
+      hi: 'आगे तीखा मोड़ है। गति कम करें।',
+      ta: 'முன்னே கூர்மையான வளைவு உள்ளது. வேகத்தைக் குறைக்கவும்.',
+      te: 'ముందు పదునైన మలుపు ఉంది. వేగం తగ్గించండి.',
+      kn: 'ಮುಂದೆ ತೀಕ್ಷ್ಣ ತಿರುವು ಇದೆ. ವೇಗ ಕಡಿಮೆ ಮಾಡಿ.',
+    },
+  },
+};
 
-  // Phone Cam PiP & Telemetry
+export const InfotainmentHUD: React.FC = () => {
+  // Vehicle telemetry
+  const [vehicleSpeed, setVehicleSpeed] = useState<number>(90); // default to 90 km/h matching deck
+  const [isBumpShockActive, setIsBumpShockActive] = useState<boolean>(false);
+  const [clockStr, setClockStr] = useState<string>('12:30');
+  const [currentLang, setCurrentLang] = useState<'en' | 'hi' | 'ta' | 'te' | 'kn'>('ta');
+  const [muted, setMuted] = useState<boolean>(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Preset Visual Scenarios (Slide 10.2, 10.3, 10.4)
+  const [activeScenario, setActiveScenario] = useState<'urgent' | 'vernacular' | 'cleared'>('urgent');
+
+  // Phone Cam PiP & Zero-Latency Sync
   const [phoneConnected, setPhoneConnected] = useState<boolean>(true);
   const [phoneFps, setPhoneFps] = useState<number>(24);
   const [phoneFrameB64, setPhoneFrameB64] = useState<string | null>(null);
+  const [showPairModal, setShowPairModal] = useState<boolean>(false);
+  const [showPiPCam, setShowPiPCam] = useState<boolean>(false);
 
   // Active Hazard Queue
   const [hazards, setHazards] = useState<ActiveHazard[]>([
     {
-      id: 'hz_init_1',
-      type: 'pothole',
-      riskLevel: 'caution',
-      distanceM: 180,
+      id: 'hz_ped_1',
+      type: 'pedestrian',
+      riskLevel: 'urgent',
+      distanceM: 100,
       laneOffsetM: 0.0,
-      nReports: 3,
-      localized: {
-        en: 'Pothole ahead in lane. Slow down.',
-        hi: 'आगे गड्ढा है। गति धीमी करें।',
-        ta: 'முன்னே குழி உள்ளது. வேகத்தைக் குறையுங்கள்.',
-        te: 'ముందు గుంత ఉంది. వేగం తగ్గించండి.',
-        kn: 'ಮುಂದೆ ಗುಂಡಿ ಇದೆ. ವೇಗ ಕಡಿಮೆ ಮಾಡಿ.',
-      },
-    },
-    {
-      id: 'hz_init_2',
-      type: 'cattle',
-      riskLevel: 'information',
-      distanceM: 290,
-      laneOffsetM: 2.1,
-      nReports: 1,
-      localized: {
-        en: 'Stray cattle at roadside.',
-        hi: 'सड़क किनारे मवेशी हैं।',
-        ta: 'சாலையோரத்தில் கால்நடைகள்.',
-        te: 'రోడ్డు పక్కన పశువులు ఉన్నాయి.',
-        kn: 'ರಸ್ತೆ ಬದಿಯಲ್ಲಿ ದನಗಳಿವೆ.',
-      },
+      nReports: 4,
+      localized: HAZARD_TEMPLATES.pedestrian.localized,
     },
   ]);
 
-  // Media Player & HVAC Dummy State for Tesla MCU realism
-  const [isPlaying, setIsPlaying] = useState<boolean>(true);
-  const [driverTemp, setDriverTemp] = useState<number>(21.5);
-  const [passengerTemp, setPassengerTemp] = useState<number>(21.5);
+  const [noteText, setNoteText] = useState<{ text: string; until: number }>({
+    text: '',
+    until: 0,
+  });
 
-  const wsRef = useRef<WebSocket | null>(null);
+  const lastHazardUpdateRef = useRef<number>(0);
   const lastLoopTimeRef = useRef<number>(performance.now());
-  const mapProgressRef = useRef<number>(0);
+  const vehicleSpeedRef = useRef<number>(vehicleSpeed);
+  vehicleSpeedRef.current = vehicleSpeed;
 
-  // 1. Live Time Clock
+  // Clock Update
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
-      setClockStr(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+      let hours = now.getHours();
+      const mins = now.getMinutes().toString().padStart(2, '0');
+      hours = hours % 12 || 12;
+      setClockStr(`${hours}:${mins}`);
     };
     updateTime();
-    const interval = setInterval(updateTime, 10000);
+    const interval = setInterval(updateTime, 30000);
     return () => clearInterval(interval);
   }, []);
 
-  // 2. WebSocket Connection to Cloud Run Relay
-  useEffect(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
-    let ws: WebSocket;
-
-    const connectWs = () => {
-      ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        setPhoneConnected(true);
-        ws.send(
-          JSON.stringify({
-            action: 'register',
-            role: 'infotainment_hud',
-            topics: ['alerts', 'telemetry'],
-          })
-        );
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const envelope = JSON.parse(event.data);
-
-          // A. Real-time Telemetry (Speed, Geometry, Shockwave)
-          if (envelope.topic === 'telemetry.heartbeat') {
-            const tel = envelope.payload;
-            if (tel.speedKmh !== undefined && tel.speedKmh > 0) {
-              setVehicleSpeed(Math.round(tel.speedKmh));
-            }
-            if (tel.roadCurve) {
-              if (tel.roadCurve === 'SHARP_LEFT' || tel.roadCurve === 'HAIRPIN_BEND') {
-                setRoadTiltDeg(-5);
-              } else if (tel.roadCurve === 'SHARP_RIGHT') {
-                setRoadTiltDeg(5);
-              } else {
-                setRoadTiltDeg(0);
-              }
-            }
-            if (tel.zAccelG && tel.zAccelG > 1.8 && !isBumpShockActive) {
-              triggerBumpCockpit(tel.zAccelG);
-            }
-            if (tel.frameB64) {
-              setPhoneFrameB64(tel.frameB64);
-            }
-          }
-
-          // B. Real-time Alert Broadcast
-          if (envelope.topic === 'alert.broadcast') {
-            const alert: DriverAlert = envelope.payload;
-            ingestDriverAlert(alert);
-          }
-        } catch (e) {}
-      };
-
-      ws.onclose = () => {
-        setPhoneConnected(false);
-        setTimeout(connectWs, 3000);
-      };
-    };
-
-    connectWs();
-    return () => {
-      if (ws) ws.close();
-    };
-  }, [isBumpShockActive]);
-
-  // 3. Ingest Incoming Driver Alert
-  const ingestDriverAlert = (alert: DriverAlert) => {
-    setHazards((prev) => {
-      const exists = prev.find((h) => h.type === alert.hazardType && h.distanceM > 40);
-      if (exists) {
-        return prev.map((h) => (h.id === exists.id ? { ...h, nReports: h.nReports + 1 } : h));
-      }
-      return [
+  // Scenario Presets
+  const applyScenario = (mode: 'urgent' | 'vernacular' | 'cleared') => {
+    setActiveScenario(mode);
+    if (mode === 'urgent') {
+      setVehicleSpeed(90);
+      setHazards([
         {
-          id: alert.alertId,
-          type: alert.hazardType,
-          riskLevel: alert.riskLevel,
-          distanceM: alert.distanceM || 220,
-          laneOffsetM: alert.targetLane === 'current_lane' ? 0.0 : 1.8,
-          nReports: 1,
-          localized: alert.localizedMessages,
+          id: 'hz_ped_1',
+          type: 'pedestrian',
+          riskLevel: 'urgent',
+          distanceM: 100,
+          laneOffsetM: 0.0,
+          nReports: 4,
+          localized: HAZARD_TEMPLATES.pedestrian.localized,
         },
-        ...prev,
-      ];
-    });
-
-    // Sound alert chime & speak localized phrase
-    if (!muted) {
-      alertAudio.playChime(alert.riskLevel);
-      alertAudio.speakAlert(alert.localizedMessages, currentLang);
+      ]);
+      setNoteText({ text: '', until: 0 });
+      alertAudio.playChime('urgent');
+      speakPhrase('pedestrian');
+    } else if (mode === 'vernacular') {
+      setVehicleSpeed(65);
+      setCurrentLang('ta');
+      setHazards([
+        {
+          id: 'hz_ped_1',
+          type: 'pedestrian',
+          riskLevel: 'urgent',
+          distanceM: 75,
+          laneOffsetM: 0.0,
+          nReports: 4,
+          localized: HAZARD_TEMPLATES.pedestrian.localized,
+        },
+      ]);
+      setNoteText({ text: '', until: 0 });
+      alertAudio.playChime('urgent');
+      speakPhrase('pedestrian');
+    } else if (mode === 'cleared') {
+      setVehicleSpeed(90);
+      setHazards([]);
+      setNoteText({
+        text: 'NO HAZARDS AHEAD · Auto-Purged Passed Pothole',
+        until: Date.now() + 15000,
+      });
+      alertAudio.playChime('information');
     }
   };
 
-  // 4. Physical Cockpit Bounce on Pothole Shockwave
-  const triggerBumpCockpit = (gVal: number) => {
-    setIsBumpShockActive(true);
-    if (!muted) alertAudio.playChime('caution');
+  // BroadcastChannel Sync
+  useEffect(() => {
+    let bc: BroadcastChannel | null = null;
+    try {
+      bc = new BroadcastChannel('margai_road_telemetry');
+      bc.onmessage = (event) => {
+        const msg = event.data;
+        if (!msg) return;
+        setPhoneConnected(true);
+        if (msg.fps) setPhoneFps(msg.fps);
 
+        if (msg.speed_kmh !== undefined && msg.speed_kmh > 0) {
+          setVehicleSpeed(Math.round(msg.speed_kmh));
+        }
+        if (msg.z_accel_g !== undefined && msg.z_accel_g > 1.8) {
+          triggerBumpEvent(msg.z_accel_g);
+        }
+        if (msg.camera_b64) {
+          setPhoneFrameB64(msg.camera_b64);
+        }
+      };
+    } catch (e) {}
+
+    return () => {
+      if (bc) bc.close();
+    };
+  }, []);
+
+  const triggerBumpEvent = (gVal: number) => {
+    setIsBumpShockActive(true);
+    setToastMessage(`💥 Pothole Shockwave Detected: ${gVal.toFixed(2)}G`);
+    setNoteText({
+      text: `IMU Bump Spike (${gVal.toFixed(2)}G) · Pothole Logged`,
+      until: Date.now() + 4000,
+    });
+    alertAudio.playChime('caution');
     setTimeout(() => {
       setIsBumpShockActive(false);
-    }, 1200);
+      setToastMessage(null);
+    }, 2800);
   };
 
-  // 5. Real-Time Distance Countdown Animation Loop
+  const speakPhrase = (type: string) => {
+    if (muted) return;
+    const phrase =
+      HAZARD_TEMPLATES[type]?.localized[currentLang] || HAZARD_TEMPLATES.pedestrian.localized.en;
+
+    if (phrase && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(phrase);
+        u.lang =
+          currentLang === 'hi'
+            ? 'hi-IN'
+            : currentLang === 'ta'
+            ? 'ta-IN'
+            : currentLang === 'te'
+            ? 'te-IN'
+            : currentLang === 'kn'
+            ? 'kn-IN'
+            : 'en-IN';
+        u.rate = 1.05;
+        setTimeout(() => window.speechSynthesis.speak(u), 150);
+      } catch (e) {}
+    }
+  };
+
+  // Distance Countdown Physics
   useEffect(() => {
     let animId: number;
 
@@ -211,456 +288,545 @@ export const InfotainmentHUD: React.FC = () => {
       const dt = Math.min(0.1, (timestamp - lastLoopTimeRef.current) / 1000);
       lastLoopTimeRef.current = timestamp;
 
-      const speedMps = vehicleSpeed / 3.6;
-      mapProgressRef.current = (mapProgressRef.current + speedMps * dt * 0.1) % 1000;
+      const speedMps = (vehicleSpeedRef.current * 1000) / 3600;
 
-      // Decrement hazard distance based on real vehicle speed
-      setHazards((prev) =>
-        prev
-          .map((h) => ({
+      if (timestamp - lastHazardUpdateRef.current >= 150) {
+        const stepDt = Math.min(0.3, (timestamp - lastHazardUpdateRef.current) / 1000);
+        lastHazardUpdateRef.current = timestamp;
+
+        setHazards((prev) => {
+          const updated = prev.map((h) => ({
             ...h,
-            distanceM: Math.max(0, h.distanceM - speedMps * dt),
-          }))
-          .filter((h) => h.distanceM > 4)
-      );
+            distanceM: h.distanceM - speedMps * stepDt,
+          }));
+
+          return updated.filter((h) => {
+            if (h.distanceM <= 0) {
+              setNoteText({
+                text: 'NO HAZARDS AHEAD · Auto-Purged Passed Pothole',
+                until: Date.now() + 8000,
+              });
+              return false;
+            }
+            return true;
+          });
+        });
+      }
 
       animId = requestAnimationFrame(loop);
     };
 
     animId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(animId);
-  }, [vehicleSpeed]);
+  }, []);
 
-  // Mathematical center dashed lane flow duration
-  const dashFlowDuration = `${(17.5 / Math.max(vehicleSpeed / 3.6, 0.5)).toFixed(2)}s`;
+  const topHazard = hazards.slice().sort((a, b) => a.distanceM - b.distanceM)[0];
+  const isPedestrianHazard = topHazard?.type === 'pedestrian';
+  const isClearedState = !topHazard && (noteText.until > Date.now() || activeScenario === 'cleared');
 
-  // Top critical hazard
-  const topHazard = hazards.slice().sort((a, b) => {
-    const rank: Record<RiskLevel, number> = { urgent: 3, caution: 2, information: 1 };
-    return rank[b.riskLevel] - rank[a.riskLevel] || a.distanceM - b.distanceM;
-  })[0];
+  // Road Geometry Math
+  const W = 800;
+  const Y0 = 140;
+  const YB = 440;
+  const geo = (d: number) => {
+    const dC = Math.max(0, Math.min(d, 300));
+    const u = 1 - dC / 300;
+    const y = Y0 + (YB - Y0) * Math.pow(u, 1.85);
+    const k = 0.12 + 0.88 * Math.pow(u, 1.85);
+    return { y, k, u };
+  };
+
+  const X_proj = (lane: number, y: number) => {
+    const u = (y - Y0) / (YB - Y0);
+    const vpX = W * 0.5;
+    const wBase = 460;
+    const laneOffsetPx = lane * (wBase * 0.38) * u;
+    return vpX + laneOffsetPx;
+  };
+
+  const dashFlowDuration = `${Math.max(0.4, 28 / Math.max(15, vehicleSpeed))}s`;
 
   return (
-    <div
-      className={`w-full h-screen min-h-[640px] flex flex-col bg-[#0d0e10] text-slate-100 font-sans select-none overflow-hidden transition-transform duration-100 ${
-        isBumpShockActive ? 'translate-y-2.5' : ''
-      }`}
-    >
-      {/* 1. TOP TESLA MCU STATUS BAR */}
-      <div className="h-10 px-4 flex items-center justify-between border-b border-white/10 bg-[#0d0e10] text-xs font-mono z-30">
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-bold text-white">{clockStr}</span>
-          <span className="text-slate-400">24°C</span>
-          <div className="flex items-center gap-1 text-slate-400">
-            <span className="font-semibold text-white">Marg</span>
-            <span className="font-semibold text-[#4285F4]">AI</span>
-            <span className="text-[10px] bg-white/10 text-slate-300 px-1.5 py-0.5 rounded">FSD v12+</span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {/* Smartphone Link Indicator */}
-          <div
-            className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
-              phoneConnected
-                ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400'
-                : 'bg-amber-500/20 border-amber-500 text-amber-400 animate-pulse'
+    <div className="w-full max-w-7xl mx-auto p-2 sm:p-4 font-['Plus_Jakarta_Sans',sans-serif]">
+      {/* SCENARIO DEMO TOOLBAR */}
+      <div className="mb-3.5 flex flex-wrap items-center justify-between gap-2 bg-[#0d1322] border border-[#1e293b] p-2.5 px-3.5 rounded-2xl text-xs font-mono">
+        <div className="flex items-center gap-2">
+          <span className="text-slate-400 font-bold uppercase tracking-wider text-[11px]">
+            Pitch Deck Snapshots:
+          </span>
+          <button
+            onClick={() => applyScenario('urgent')}
+            className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all ${
+              activeScenario === 'urgent' && topHazard
+                ? 'bg-[#EA4335] text-white shadow-lg shadow-red-500/20'
+                : 'bg-[#1e293b] text-slate-300 hover:text-white'
             }`}
           >
-            <Smartphone className="w-3 h-3" />
-            <span>{phoneConnected ? `Phone Node (${phoneFps} FPS)` : 'Connecting Phone'}</span>
-          </div>
-
-          {/* Language Selector */}
-          <div className="relative">
-            <button
-              onClick={() => setLangMenuOpen(!langMenuOpen)}
-              className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-xs font-medium"
-            >
-              {{ en: 'English', hi: 'हिन्दी', ta: 'தமிழ்', te: 'తెలుగు', kn: 'ಕನ್ನಡ' }[currentLang]} ▾
-            </button>
-            {langMenuOpen && (
-              <div className="absolute right-0 top-7 z-50 bg-[#1a1b1f] border border-white/10 rounded-xl shadow-2xl py-1 text-xs min-w-[110px]">
-                {(['en', 'hi', 'ta', 'te', 'kn'] as const).map((l) => (
-                  <button
-                    key={l}
-                    onClick={() => {
-                      setCurrentLang(l);
-                      alertAudio.setLanguage(l);
-                      setLangMenuOpen(false);
-                    }}
-                    className={`block w-full text-left px-3 py-1.5 hover:bg-white/10 ${
-                      currentLang === l ? 'text-[#4285F4] font-bold' : 'text-slate-300'
-                    }`}
-                  >
-                    {{ en: 'English', hi: 'हिन्दी', ta: 'தமிழ்', te: 'తెలుగు', kn: 'ಕನ್ನಡ' }[l]}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <button
-            onClick={() => {
-              setMuted(!muted);
-              alertAudio.setMuted(!muted);
-            }}
-            className="p-1 rounded bg-white/10 hover:bg-white/20 text-slate-300"
-          >
-            {muted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5 text-[#4285F4]" />}
+            <AlertTriangle className="w-3.5 h-3.5" />
+            <span>2. Urgent Alert (Slide 10.2)</span>
           </button>
 
-          <span className="text-slate-400">82% 🔋</span>
+          <button
+            onClick={() => applyScenario('vernacular')}
+            className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all ${
+              activeScenario === 'vernacular'
+                ? 'bg-[#34A853] text-white shadow-lg shadow-green-500/20'
+                : 'bg-[#1e293b] text-slate-300 hover:text-white'
+            }`}
+          >
+            <Volume2 className="w-3.5 h-3.5" />
+            <span>3. Vernacular Voice (Slide 10.3)</span>
+          </button>
+
+          <button
+            onClick={() => applyScenario('cleared')}
+            className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all ${
+              activeScenario === 'cleared'
+                ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/20'
+                : 'bg-[#1e293b] text-slate-300 hover:text-white'
+            }`}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>4. Auto-Purged & Clear (Slide 10.4)</span>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => triggerBumpEvent(2.4)}
+            className="px-2.5 py-1.5 rounded-xl bg-[#FBBC05]/20 text-[#FBBC05] hover:bg-[#FBBC05]/30 border border-[#FBBC05]/30 font-bold flex items-center gap-1 transition-all active:scale-95"
+          >
+            💥 Shock Spike (2.4G)
+          </button>
+
+          <button
+            onClick={() => setShowPiPCam(!showPiPCam)}
+            className={`px-2.5 py-1.5 rounded-xl border font-bold flex items-center gap-1 transition-all ${
+              showPiPCam ? 'bg-[#4285F4] text-white border-[#4285F4]' : 'bg-[#1e293b] text-slate-300 border-slate-700'
+            }`}
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            <span>Cam PiP</span>
+          </button>
+
+          <div className="flex items-center bg-[#090D16] border border-[#1E293B] rounded-xl p-0.5">
+            {['en', 'ta', 'te', 'hi'].map((lng) => (
+              <button
+                key={lng}
+                onClick={() => setCurrentLang(lng as any)}
+                className={`px-2 py-1 rounded-lg uppercase text-[10px] font-bold ${
+                  currentLang === lng ? 'bg-[#4285F4] text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {lng}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* 2. MAIN TESLA MCU SPLIT SCREEN: LEFT 38% FSD 3D ROAD | RIGHT 62% VECTOR MAP */}
-      <div className="flex-1 flex w-full overflow-hidden">
-        {/* =========================================================================
-            LEFT 38%: TESLA FSD 3D PERSPECTIVE ROAD VISUALIZATION
-        ========================================================================= */}
-        <div className="w-[38%] relative border-r border-white/10 bg-[#0f1012] flex flex-col justify-between overflow-hidden p-3">
-          {/* Top HUD: Speedometer, Gear, Speed Limit */}
-          <div className="flex items-start justify-between z-20">
-            <div>
-              <div className="flex items-baseline gap-1">
-                <span className="text-6xl font-light tracking-tight text-white tabular-nums">
-                  {vehicleSpeed}
-                </span>
-                <span className="text-xs font-mono text-slate-400">KM/H</span>
-              </div>
-              <div className="flex items-center gap-2 text-xs font-mono mt-1 text-slate-400">
-                <span>P</span>
-                <span>R</span>
-                <span>N</span>
-                <span className="text-white font-black text-sm bg-white/20 px-1 rounded">D</span>
-              </div>
-            </div>
-
-            {/* Speed Limit Circle */}
-            <div className="w-10 h-10 rounded-full border-2 border-[#EA4335] bg-white flex items-center justify-center text-slate-900 font-black text-sm shadow-lg">
-              50
-            </div>
+      {/* AUTOMOTIVE TOUCHSCREEN BEZEL (16:9 DISPLAY) */}
+      <div className="relative w-full aspect-[16/9] min-h-[440px] max-h-[640px] bg-[#0c0f17] border-[12px] sm:border-[16px] border-[#181c26] rounded-[28px] sm:rounded-[36px] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.95)] overflow-hidden flex flex-col select-none ring-1 ring-white/10">
+        
+        {/* TOP STATUS BAR */}
+        <div className="w-full h-8 px-4 sm:px-6 bg-[#0a0d14] border-b border-white/[0.06] flex items-center justify-between text-slate-400 text-xs font-mono z-30">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-slate-300 text-[11px]">Dspec - Send</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span className="text-[10px] text-slate-500 hidden sm:inline">MargAI Connected</span>
           </div>
 
-          {/* 3D Road Viewport SVG */}
-          <div className="absolute inset-0 z-10 pointer-events-none">
-            <svg
-              viewBox="0 0 500 450"
-              preserveAspectRatio="xMidYMax slice"
-              className="w-full h-full"
-            >
-              <defs>
-                <linearGradient id="roadGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0" stopColor="#383b42" />
-                  <stop offset="1" stopColor="#22242a" />
-                </linearGradient>
-                <linearGradient id="horizonFade" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0" stopColor="#0f1012" />
-                  <stop offset="0.45" stopColor="#0f1012" stopOpacity="0.85" />
-                  <stop offset="1" stopColor="#0f1012" stopOpacity="0" />
-                </linearGradient>
-              </defs>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 text-[11px]">
+              <Wifi className="w-3.5 h-3.5 text-slate-300" />
+              <span className="text-slate-300 font-bold">5G</span>
+            </div>
+            <div className="flex items-center gap-1 text-[11px]">
+              <Battery className="w-3.5 h-3.5 text-slate-300" />
+              <span>98%</span>
+            </div>
+            <div className="font-bold text-white tracking-wide text-xs">
+              {clockStr}
+            </div>
+          </div>
+        </div>
 
-              {/* Road World (Tilts ±5° on Curves) */}
-              <g
-                style={{
-                  transform: `rotate(${roadTiltDeg}deg)`,
-                  transformOrigin: '250px 450px',
-                  transition: 'transform 0.8s cubic-bezier(0.2, 0.7, 0.2, 1)',
-                }}
-              >
-                {/* Asphalt Trapezoid */}
-                <polygon points="175,70 325,70 480,450 20,450" fill="url(#roadGrad)" />
+        {/* MAIN SPLIT SCREEN: LEFT 50% 3D ROAD | RIGHT 50% NAVIGATION MAP */}
+        <div className="flex-1 w-full grid grid-cols-1 md:grid-cols-2 relative overflow-hidden">
+          
+          {/* ============================================================== */}
+          {/* LEFT HALF: 3D VECTOR ROAD / PERSPECTIVE DRIVING ENVIRONMENT */}
+          {/* ============================================================== */}
+          <div className="relative h-full w-full bg-[#11141c] border-r border-white/[0.08] overflow-hidden flex flex-col justify-between">
+            
+            {/* Speed & Gear Cluster */}
+            <div className="absolute top-4 left-6 z-20 flex items-center gap-3">
+              <div className="w-11 h-11 rounded-full bg-[#2563eb] text-white font-extrabold text-xl flex items-center justify-center shadow-lg shadow-blue-600/30">
+                D
+              </div>
+              <div>
+                <div className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight leading-none font-mono">
+                  {vehicleSpeed}
+                </div>
+                <div className="text-[11px] font-mono text-slate-400 uppercase tracking-widest mt-0.5">
+                  km/h
+                </div>
+              </div>
+            </div>
 
-                {/* Shoulder Boundary Lines */}
-                <line x1="175" y1="70" x2="20" y2="450" stroke="#d7dae0" strokeWidth="2.5" strokeOpacity="0.6" />
-                <line x1="325" y1="70" x2="480" y2="450" stroke="#d7dae0" strokeWidth="2.5" strokeOpacity="0.6" />
+            {/* 3D Perspective Road SVG */}
+            <div className="relative w-full h-full flex items-center justify-center">
+              <svg viewBox="0 0 800 480" className="absolute inset-0 w-full h-full">
+                <defs>
+                  <linearGradient id="roadAsphalt" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#171b24" />
+                    <stop offset="60%" stopColor="#1e2330" />
+                    <stop offset="100%" stopColor="#252b3b" />
+                  </linearGradient>
 
-                {/* Flowing Center Dashed Line */}
+                  <linearGradient id="brakeConeGrad" x1="0" y1="1" x2="0" y2="0">
+                    <stop offset="0%" stopColor="#ef4444" stopOpacity="0.55" />
+                    <stop offset="40%" stopColor="#dc2626" stopOpacity="0.32" />
+                    <stop offset="100%" stopColor="#ef4444" stopOpacity="0.05" />
+                  </linearGradient>
+
+                  <linearGradient id="horizonFade" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#11141c" stopOpacity="1" />
+                    <stop offset="100%" stopColor="#11141c" stopOpacity="0" />
+                  </linearGradient>
+
+                  <filter id="pedGlow" x="-30%" y="-30%" width="160%" height="160%">
+                    <feDropShadow dx="0" dy="0" stdDeviation="6" floodColor="#ef4444" floodOpacity="0.8" />
+                  </filter>
+                </defs>
+
+                {/* Road Base Surface */}
+                <polygon
+                  points={`${X_proj(-1.6, Y0)},${Y0} ${X_proj(1.6, Y0)},${Y0} ${X_proj(2.0, YB)},${YB} ${X_proj(-2.0, YB)},${YB}`}
+                  fill="url(#roadAsphalt)"
+                />
+
+                {/* Outer Road Edges */}
+                <line x1={X_proj(-1.4, Y0)} y1={Y0} x2={X_proj(-1.8, YB)} y2={YB} stroke="#475569" strokeWidth="2.5" strokeOpacity="0.6" />
+                <line x1={X_proj(1.4, Y0)} y1={Y0} x2={X_proj(1.8, YB)} y2={YB} stroke="#475569" strokeWidth="2.5" strokeOpacity="0.6" />
+
+                {/* Dashed Center Road Divider */}
                 <line
-                  x1="250"
-                  y1="70"
-                  x2="250"
-                  y2="450"
+                  x1={X_proj(0, Y0)}
+                  y1={Y0}
+                  x2={X_proj(0, YB)}
+                  y2={YB}
                   stroke="#ffffff"
-                  strokeWidth="3.5"
-                  strokeOpacity="0.8"
-                  strokeDasharray="22 18"
+                  strokeWidth="4"
+                  strokeOpacity="0.75"
+                  strokeDasharray="28 22"
                   style={{
                     animation: `flow ${dashFlowDuration} linear infinite`,
                   }}
                 />
 
-                {/* 3D Perspective Hazards */}
-                {hazards.map((h) => {
-                  const s = 0.08 + 0.92 * (1 - Math.min(h.distanceM, 300) / 300);
-                  const y = 70 + Math.pow(s, 1.6) * 380;
-                  const x = 250 + h.laneOffsetM * 35 * s;
-                  const col = h.riskLevel === 'urgent' ? '#EA4335' : h.riskLevel === 'caution' ? '#FBBC05' : '#4285F4';
+                {/* RED BRAKING DANGER ZONE CONE (Slide 10.2 & 6.2) */}
+                {topHazard && !isClearedState && (
+                  <g>
+                    <polygon
+                      points={`375,410 425,410 ${X_proj(0.9, geo(topHazard.distanceM).y)},${geo(topHazard.distanceM).y} ${X_proj(-0.9, geo(topHazard.distanceM).y)},${geo(topHazard.distanceM).y}`}
+                      fill="url(#brakeConeGrad)"
+                      stroke="#ef4444"
+                      strokeWidth="2"
+                      strokeOpacity="0.8"
+                    />
 
-                  if (h.type === 'pothole') {
-                    return (
-                      <g key={h.id} transform={`translate(${x},${y}) scale(${s})`}>
-                        <ellipse rx="36" ry="11" fill="#000" opacity="0.7" />
-                        <ellipse rx="42" ry="14" fill="none" stroke={col} strokeWidth="3" />
-                        <circle cy="-28" r="10" fill={col} />
-                        <text y="-24" textAnchor="middle" fontSize="13" fontWeight="900" fill="#111">
-                          !
-                        </text>
-                      </g>
-                    );
-                  }
+                    <path
+                      d={`M ${X_proj(-0.7, geo(topHazard.distanceM * 0.7).y)} ${geo(topHazard.distanceM * 0.7).y} Q ${X_proj(0, geo(topHazard.distanceM * 0.7).y)} ${geo(topHazard.distanceM * 0.7).y - 8} ${X_proj(0.7, geo(topHazard.distanceM * 0.7).y)} ${geo(topHazard.distanceM * 0.7).y}`}
+                      stroke="#ef4444"
+                      strokeWidth="2.5"
+                      strokeDasharray="6 4"
+                      fill="none"
+                      opacity="0.9"
+                    />
+                  </g>
+                )}
 
-                  if (h.type === 'waterlogging') {
-                    return (
-                      <g key={h.id} transform={`translate(${x},${y}) scale(${s})`}>
-                        <ellipse rx="85" ry="22" fill="#1e40af" opacity="0.8" />
-                        <ellipse rx="75" ry="16" fill="#38bdf8" opacity="0.5" />
-                        <ellipse rx="88" ry="24" fill="none" stroke="#60a5fa" strokeWidth="2.5" strokeDasharray="6 4" />
-                        <circle cy="-34" r="10" fill="#38bdf8" />
-                        <text y="-30" textAnchor="middle" fontSize="12" fontWeight="bold" fill="#0f172a">
-                          🌊
-                        </text>
-                      </g>
-                    );
-                  }
+                {/* RED PEDESTRIAN AVATAR (Slide 10.2) */}
+                {topHazard && isPedestrianHazard && !isClearedState && (
+                  <g
+                    transform={`translate(${X_proj(0.08, geo(topHazard.distanceM).y)}, ${geo(topHazard.distanceM).y}) scale(${geo(topHazard.distanceM).k * 1.35})`}
+                    filter="url(#pedGlow)"
+                  >
+                    <ellipse rx="38" ry="12" fill="#ef4444" fillOpacity="0.3" stroke="#ef4444" strokeWidth="2.5" />
+                    <circle cx="0" cy="-64" r="8" fill="#ef4444" />
+                    <rect x="-6" y="-54" width="12" height="24" rx="4" fill="#ef4444" />
+                    <line x1="-3" y1="-30" x2="-10" y2="-6" stroke="#ef4444" strokeWidth="4" strokeLinecap="round" />
+                    <line x1="3" y1="-30" x2="10" y2="-6" stroke="#ef4444" strokeWidth="4" strokeLinecap="round" />
+                    <line x1="-6" y1="-48" x2="-14" y2="-28" stroke="#ef4444" strokeWidth="3" strokeLinecap="round" />
+                    <line x1="6" y1="-48" x2="14" y2="-32" stroke="#ef4444" strokeWidth="3" strokeLinecap="round" />
+                    <polygon points="0,-82 -10,-68 10,-68" fill="#ef4444" stroke="#ffffff" strokeWidth="1" />
+                    <text x="0" y="-71" textAnchor="middle" fontSize="10" fontWeight="bold" fill="#ffffff">
+                      !
+                    </text>
+                  </g>
+                )}
 
-                  if (h.type === 'pedestrian') {
-                    return (
-                      <g key={h.id} transform={`translate(${x},${y}) scale(${s * 1.15})`}>
-                        <ellipse rx="22" ry="7" fill="#000" opacity="0.4" />
-                        <rect x="-8" y="-55" width="16" height="32" rx="6" fill="#e6e9ee" />
-                        <circle cy="-65" r="7" fill="#e6e9ee" />
-                        <circle cy="-82" r="9" fill={col} />
-                        <text y="-78" textAnchor="middle" fontSize="11" fontWeight="bold" fill="#111">
-                          🚶
-                        </text>
-                      </g>
-                    );
-                  }
+                {/* Horizon Fade */}
+                <rect x="0" y="0" width="800" height={Y0 + 20} fill="url(#horizonFade)" />
 
-                  if (h.type === 'cattle') {
-                    return (
-                      <g key={h.id} transform={`translate(${x},${y}) scale(${s * 1.1})`}>
-                        <ellipse rx="28" ry="9" fill="#000" opacity="0.4" />
-                        <rect x="-14" y="-36" width="28" height="20" rx="6" fill="#e6e9ee" />
-                        <circle cx="-16" cy="-42" r="8" fill="#e6e9ee" />
-                        <circle cy="-56" r="9" fill={col} />
-                        <text y="-52" textAnchor="middle" fontSize="11" fontWeight="bold" fill="#111">
-                          🐄
-                        </text>
-                      </g>
-                    );
-                  }
+                {/* SILVER VEHICLE AVATAR */}
+                <g transform="translate(400, 420)">
+                  <ellipse cx="0" cy="18" rx="88" ry="12" fill="#000000" opacity="0.6" />
+                  <path d="M-72 8 L-64 22 L64 22 L72 8 Z" fill="#1e2430" stroke="#334155" strokeWidth="1.5" />
+                  <path d="M-76 6 Q-78 -24 -60 -36 L60 -36 Q78 -24 76 6 Z" fill="#cbd5e1" stroke="#94a3b8" strokeWidth="1.5" />
+                  <path d="M-52 -36 L-38 -72 Q-32 -76 0 -76 Q32 -76 38 -72 L52 -36 Z" fill="#0f172a" stroke="#334155" strokeWidth="1.5" />
+                  <rect x="-68" y="-12" width="136" height="7" rx="3.5" fill="#ef4444" />
+                  <rect x="-70" y="-14" width="22" height="11" rx="3" fill="#dc2626" />
+                  <rect x="48" y="-14" width="22" height="11" rx="3" fill="#dc2626" />
+                  <ellipse cx="-59" cy="-8" rx="14" ry="4" fill="#ef4444" opacity="0.4" />
+                  <ellipse cx="59" cy="-8" rx="14" ry="4" fill="#ef4444" opacity="0.4" />
+                  <rect x="-24" y="-2" width="48" height="14" rx="2" fill="#0f172a" stroke="#cbd5e1" strokeWidth="1" />
+                  <text x="0" y="8" textAnchor="middle" fontSize="7" fontWeight="bold" fill="#38bdf8">
+                    MARG•AI
+                  </text>
+                </g>
+              </svg>
+            </div>
 
-                  return (
-                    <g key={h.id} transform={`translate(${x},${y}) scale(${s})`}>
-                      <circle r="16" fill={col} opacity="0.85" />
-                      <text y="5" textAnchor="middle" fontSize="14">
-                        ⚠️
-                      </text>
-                    </g>
-                  );
-                })}
-              </g>
-
-              {/* Horizon Soft Fade */}
-              <rect x="0" y="0" width="500" height="180" fill="url(#horizonFade)" />
-
-              {/* Tesla Vehicle Avatar (Bottom Center) */}
-              <g transform="translate(250, 440)">
-                <ellipse cx="0" cy="-6" rx="80" ry="14" fill="#000" opacity="0.6" />
-                <path d="M-64 -26 Q-68 -60 -52 -64 L52 -64 Q68 -60 64 -26 Z" fill="#f3f4f6" />
-                <path d="M-45 -64 L-34 -102 Q-32 -106 -24 -106 L24 -106 Q32 -106 34 -102 L45 -64 Z" fill="#2d323b" />
-                <rect x="-56" y="-48" width="112" height="5" rx="2" fill="#ff3b30" />
-              </g>
-            </svg>
-          </div>
-
-          {/* Top Floating Glass HUD Alert Pill */}
-          {topHazard && (
-            <div className="z-20 mt-4 bg-slate-900/90 border border-white/20 rounded-2xl p-2.5 backdrop-blur-xl shadow-2xl flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div
-                  className="w-9 h-9 rounded-xl flex items-center justify-center text-lg font-bold"
-                  style={{
-                    backgroundColor: topHazard.riskLevel === 'urgent' ? '#EA433530' : '#FBBC0530',
-                    color: topHazard.riskLevel === 'urgent' ? '#EA4335' : '#FBBC05',
-                  }}
-                >
-                  {topHazard.type === 'pothole' ? '🕳️' : topHazard.type === 'cattle' ? '🐄' : '⚠️'}
+            {/* BOTTOM HUD STATUS BANNER */}
+            <div className="absolute bottom-3 left-0 right-0 z-20 flex justify-center px-4 pointer-events-none">
+              {topHazard && !isClearedState ? (
+                <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#2b0c10]/95 border border-[#ef4444] text-[#ef4444] shadow-2xl backdrop-blur-md animate-pulse">
+                  <AlertTriangle className="w-4 h-4 text-[#ef4444]" />
+                  <span className="font-extrabold text-xs sm:text-sm tracking-wider uppercase">
+                    ▲ URGENT PEDESTRIAN RISK [{Math.max(10, Math.round(topHazard.distanceM))}m]
+                  </span>
                 </div>
-                <div>
-                  <p className="text-[10px] uppercase font-bold text-slate-400">
-                    {topHazard.riskLevel.toUpperCase()} · Ahead in lane
-                  </p>
-                  <p className="text-xs font-bold text-white leading-tight">
-                    {topHazard.localized[currentLang] || topHazard.localized.en}
-                  </p>
+              ) : (
+                <div className="flex flex-col items-center justify-center px-5 py-2 rounded-xl bg-[#092314]/95 border border-[#22c55e] text-center shadow-2xl backdrop-blur-md">
+                  <div className="font-extrabold text-sm sm:text-base text-[#22c55e] tracking-wider uppercase">
+                    NO HAZARDS AHEAD
+                  </div>
+                  <div className="text-[11px] font-mono text-emerald-300">
+                    Auto-Purged Passed Pothole
+                  </div>
                 </div>
-              </div>
-
-              <div className="text-right font-mono pr-1">
-                <span className="text-xl font-light text-white">{Math.round(topHazard.distanceM)}</span>
-                <span className="text-[10px] text-slate-400 ml-1">m</span>
-              </div>
-            </div>
-          )}
-
-          {/* Picture-in-Picture Phone Rear Camera Feed (Bottom Left) */}
-          <div className="z-20 self-end w-36 aspect-video bg-black/80 rounded-xl overflow-hidden border border-white/20 shadow-2xl relative">
-            {phoneFrameB64 ? (
-              <img src={phoneFrameB64} alt="Phone Cam PiP" className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center text-[10px] text-slate-400">
-                <Smartphone className="w-4 h-4 text-[#4285F4] animate-pulse mb-1" />
-                <span>Phone PiP Live</span>
-              </div>
-            )}
-            <span className="absolute top-1 left-1 bg-black/70 px-1 py-0.5 rounded text-[8px] font-mono text-emerald-400">
-              📱 Dashcam
-            </span>
-          </div>
-        </div>
-
-        {/* =========================================================================
-            RIGHT 62%: TESLA NAVIGATION VECTOR MAP & MEDIA/HVAC DOCK
-        ========================================================================= */}
-        <div className="w-[62%] relative bg-[#15171b] flex flex-col justify-between overflow-hidden">
-          {/* Navigation Vector Map SVG */}
-          <svg className="absolute inset-0 w-full h-full" viewBox="0 0 800 500" preserveAspectRatio="none">
-            {/* Background land */}
-            <rect width="800" height="500" fill="#15171b" />
-
-            {/* City blocks */}
-            <rect x="40" y="40" width="160" height="120" rx="8" fill="#1e2126" />
-            <rect x="240" y="40" width="220" height="120" rx="8" fill="#1e2126" />
-            <rect x="500" y="40" width="260" height="120" rx="8" fill="#1e2126" />
-
-            <rect x="40" y="220" width="180" height="160" rx="8" fill="#1e2126" />
-            <rect x="260" y="220" width="200" height="160" rx="8" fill="#1e2126" />
-            <rect x="500" y="220" width="260" height="160" rx="8" fill="#1e2126" />
-
-            {/* Park & Water */}
-            <rect x="500" y="40" width="260" height="120" rx="8" fill="#13291b" />
-            <ellipse cx="620" cy="90" rx="80" ry="35" fill="#10283b" />
-            <text x="620" y="94" textAnchor="middle" fontSize="11" fill="#6c97ff" opacity="0.6">
-              Cubbon Lake
-            </text>
-
-            {/* Road Network Grid */}
-            <path d="M0,190 H800 M0,410 H800 M210,0 V500 M480,0 V500" stroke="#2f343c" strokeWidth="18" fill="none" />
-            <path d="M0,190 H800 M0,410 H800 M210,0 V500 M480,0 V500" stroke="#3d444f" strokeWidth="14" fill="none" />
-
-            {/* Active Navigation Route (Blue Neon Polyline) */}
-            <path
-              d="M100,190 L480,190 L480,360 L780,360"
-              stroke="#4285F4"
-              strokeWidth="10"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              fill="none"
-              opacity="0.95"
-            />
-
-            {/* Vehicle Location on Map */}
-            <g transform="translate(320, 190) rotate(90)">
-              <circle r="24" fill="#4285F4" opacity="0.25" />
-              <path d="M0 -16 L10 10 L0 5 L-10 10 Z" fill="#4285F4" stroke="#fff" strokeWidth="2" />
-            </g>
-
-            {/* POI & Hazard Markers on Map */}
-            <g transform="translate(480, 190)">
-              <circle r="14" fill="#EA4335" />
-              <text y="5" textAnchor="middle" fontSize="12">
-                🕳️
-              </text>
-            </g>
-
-            <g transform="translate(640, 360)">
-              <circle r="14" fill="#FBBC05" />
-              <text y="5" textAnchor="middle" fontSize="12">
-                🐄
-              </text>
-            </g>
-          </svg>
-
-          {/* Top Navigation Banner */}
-          <div className="z-20 m-4 max-w-md bg-slate-900/90 border border-white/20 rounded-2xl p-3.5 backdrop-blur-xl shadow-2xl flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-xl bg-[#4285F4] flex items-center justify-center text-white">
-              <Navigation className="w-6 h-6 rotate-45" />
-            </div>
-            <div className="flex-1">
-              <p className="text-xs text-slate-400">In 280 meters</p>
-              <p className="text-sm font-bold text-white">Turn right onto Outer Ring Road</p>
-            </div>
-            <div className="text-right border-l border-white/10 pl-3">
-              <p className="text-sm font-bold text-white">14 min</p>
-              <p className="text-[11px] text-slate-400">6.2 km</p>
+              )}
             </div>
           </div>
 
-          {/* Bottom Floating Media Player & HVAC Dock */}
-          <div className="z-20 m-4 flex flex-col gap-2">
-            {/* Spotify / Media Dock */}
-            <div className="bg-slate-900/85 border border-white/10 rounded-2xl p-2.5 backdrop-blur-xl flex items-center justify-between text-xs">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-                  <Music className="w-4 h-4" />
+          {/* ============================================================== */}
+          {/* RIGHT HALF: NAVIGATION MAP + TOP ALERT BANNER */}
+          {/* ============================================================== */}
+          <div className="relative h-full w-full bg-[#0d1017] overflow-hidden flex flex-col justify-between">
+            
+            {/* TOP ALERT BANNER (Slide 10.2 & 10.3) */}
+            <div className="p-3 sm:p-4 z-20">
+              {topHazard && !isClearedState ? (
+                <div className="w-full bg-[#300d12]/95 border border-[#ef4444] rounded-2xl p-3 sm:p-3.5 shadow-2xl backdrop-blur-xl flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-[#ef4444]/20 border border-[#ef4444] flex items-center justify-center text-[#ef4444] font-extrabold text-lg flex-shrink-0">
+                      ▲
+                    </div>
+                    <div>
+                      <div className="text-xs sm:text-sm font-extrabold text-white leading-tight">
+                        URGENT: Person Crossing Ahead. Brake gently
+                      </div>
+                      <div className="text-[11px] text-red-200/90 font-medium mt-0.5 tracking-wide">
+                        {currentLang === 'ta'
+                          ? 'முன்னே ஒருவர் சாலையைக் கடக்கிறார். கவனம்.'
+                          : 'தமிழ் | తెలుగు | हिन्दी'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2.5 flex-shrink-0">
+                    <span className="text-xs font-mono font-bold text-white bg-black/40 px-2 py-1 rounded-lg border border-white/10">
+                      {Math.max(10, Math.round(topHazard.distanceM))}m
+                    </span>
+
+                    <div className="flex items-center gap-0.5 h-6 px-1">
+                      {[14, 22, 10, 24, 18, 12, 20].map((h, i) => (
+                        <span
+                          key={i}
+                          className="w-1 bg-[#ef4444] rounded-full animate-pulse"
+                          style={{
+                            height: `${h}px`,
+                            animationDelay: `${i * 0.12}s`,
+                            animationDuration: '0.6s',
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <p className="font-bold text-white text-xs">A.R. Rahman – Jai Ho</p>
-                  <p className="text-[10px] text-slate-400">Slumdog Millionaire OST</p>
+              ) : activeScenario === 'vernacular' ? (
+                <div className="w-full bg-[#0a2618]/95 border border-[#22c55e] rounded-2xl p-3 sm:p-3.5 shadow-2xl backdrop-blur-xl flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-[#22c55e]/20 border border-[#22c55e] flex items-center justify-center text-[#22c55e] text-lg flex-shrink-0">
+                      🔊
+                    </div>
+                    <div>
+                      <div className="text-xs sm:text-sm font-extrabold text-white leading-tight">
+                        முன்னே ஒருவர் சாலையைக் கடக்கிறார். கவனம்.
+                      </div>
+                      <div className="text-[11px] text-emerald-300 font-mono mt-0.5">
+                        MargAI Vernacular Co-Pilot Active
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-0.5 h-6 px-1">
+                    {[12, 20, 16, 24, 18, 10, 22].map((h, i) => (
+                      <span
+                        key={i}
+                        className="w-1 bg-[#22c55e] rounded-full animate-pulse"
+                        style={{
+                          height: `${h}px`,
+                          animationDelay: `${i * 0.12}s`,
+                          animationDuration: '0.6s',
+                        }}
+                      />
+                    ))}
+                  </div>
                 </div>
+              ) : (
+                <div className="w-full bg-[#091a14]/90 border border-[#22c55e]/60 rounded-2xl p-2.5 px-4 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-[#22c55e]" />
+                    <span className="text-xs text-white font-medium">
+                      Corridor Clear · Pothole Auto-Purged & Queued for BBMP Repair
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono text-emerald-400">0 Hazards Ahead</span>
+                </div>
+              )}
+            </div>
+
+            {/* Turn-by-Turn Card */}
+            <div className="px-4 z-10 flex items-center justify-between">
+              <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-[#141924]/90 border border-white/10 text-white text-xs font-semibold backdrop-blur-md">
+                <span className="text-lg text-[#38bdf8] font-bold">↱</span>
+                <span>Upcoming Tamil Nadu</span>
               </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setIsPlaying(!isPlaying)}
-                  className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white"
-                >
-                  {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-                </button>
-                <button className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white">
-                  <SkipForward className="w-3.5 h-3.5" />
-                </button>
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-[10px] font-mono text-emerald-300">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                <span>GPS High Acc</span>
               </div>
             </div>
 
-            {/* Tesla MCU HVAC Climate Bar */}
-            <div className="bg-black/90 border border-white/10 rounded-2xl px-4 py-2 flex items-center justify-between text-xs font-mono">
-              <div className="flex items-center gap-2">
-                <Thermometer className="w-4 h-4 text-slate-400" />
-                <button onClick={() => setDriverTemp(driverTemp - 0.5)} className="text-slate-400 hover:text-white">
-                  -
-                </button>
-                <span className="font-bold text-white text-sm">{driverTemp.toFixed(1)}°C</span>
-                <button onClick={() => setDriverTemp(driverTemp + 0.5)} className="text-slate-400 hover:text-white">
-                  +
-                </button>
+            {/* DARK VECTOR ROAD MAP */}
+            <div className="relative flex-1 w-full h-full overflow-hidden">
+              <svg viewBox="0 0 600 360" className="absolute inset-0 w-full h-full">
+                <rect width="600" height="360" fill="#0d111a" />
+                <path d="M40 0 L40 360 M120 0 L120 360 M200 0 L200 360 M320 0 L320 360 M440 0 L440 360 M520 0 L520 360" stroke="#1a2233" strokeWidth="2" />
+                <path d="M0 60 L600 60 M0 140 L600 140 M0 220 L600 220 M0 300 L600 300" stroke="#1a2233" strokeWidth="2" />
+                <path d="M60 360 Q180 260 220 180 T420 80 L580 40" stroke="#242e42" strokeWidth="18" fill="none" strokeLinecap="round" />
+                <path d="M20 180 L220 180 L360 360" stroke="#242e42" strokeWidth="14" fill="none" strokeLinecap="round" />
+                <path d="M180 340 L210 240 L240 180 Q260 140 320 120 L440 90 L520 70" stroke="#0284c7" strokeWidth="10" fill="none" strokeLinecap="round" opacity="0.5" />
+                <path d="M180 340 L210 240 L240 180 Q260 140 320 120 L440 90 L520 70" stroke="#38bdf8" strokeWidth="6" fill="none" strokeLinecap="round" />
+
+                {topHazard && !isClearedState && (
+                  <g transform="translate(240, 180)">
+                    <circle r="16" fill="#ef4444" opacity="0.3" className="animate-ping" />
+                    <circle r="10" fill="#ef4444" stroke="#ffffff" strokeWidth="2" />
+                    <text y="4" textAnchor="middle" fontSize="9" fontWeight="bold" fill="#ffffff">
+                      !
+                    </text>
+                  </g>
+                )}
+
+                <g transform="translate(195, 290) rotate(-15)">
+                  <circle r="18" fill="#38bdf8" opacity="0.3" className="animate-pulse" />
+                  <circle r="10" fill="#0284c7" stroke="#ffffff" strokeWidth="2" />
+                  <path d="M0 -6 L5 4 L0 2 L-5 4 Z" fill="#ffffff" />
+                </g>
+              </svg>
+
+              <div className="absolute bottom-3 left-4 bg-[#131924]/90 border border-white/10 px-3 py-1 rounded-lg text-[10px] font-mono text-slate-300">
+                Upcoming route
               </div>
 
-              <div className="flex items-center gap-4 text-slate-400">
-                <span className="cursor-pointer hover:text-white">♨️ Front</span>
-                <span className="cursor-pointer hover:text-white">💺 Left</span>
-                <Fan className="w-4 h-4 text-[#4285F4]" />
-                <span className="cursor-pointer hover:text-white">💺 Right</span>
-                <span className="cursor-pointer hover:text-white">♨️ Rear</span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button onClick={() => setPassengerTemp(passengerTemp - 0.5)} className="text-slate-400 hover:text-white">
-                  -
-                </button>
-                <span className="font-bold text-white text-sm">{passengerTemp.toFixed(1)}°C</span>
-                <button onClick={() => setPassengerTemp(passengerTemp + 0.5)} className="text-slate-400 hover:text-white">
-                  +
-                </button>
-              </div>
+              {(showPiPCam || phoneFrameB64) && (
+                <div className="absolute right-3 bottom-3 w-40 sm:w-48 aspect-video rounded-xl overflow-hidden border border-white/20 shadow-2xl z-20 bg-black">
+                  <img src={phoneFrameB64 || ''} alt="Phone Cam" className="w-full h-full object-cover" />
+                  <div className="absolute top-1 left-1.5 bg-black/80 px-1.5 py-0.5 rounded text-[9px] font-mono text-emerald-400">
+                    📱 Phone Cam
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
+
+        {/* BOTTOM AUTOMOTIVE DOCK */}
+        <div className="w-full h-12 sm:h-14 bg-[#0a0d14] border-t border-white/[0.08] px-3 sm:px-6 flex items-center justify-between z-30">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button onClick={() => applyScenario('urgent')} className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-[#38bdf8] transition-all">
+              <Car className="w-4 sm:w-5 h-4 sm:h-5" />
+            </button>
+            <button className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-slate-300 transition-all">
+              <Grid className="w-4 sm:w-5 h-4 sm:h-5" />
+            </button>
+          </div>
+
+          <div className="flex items-center gap-3 sm:gap-6">
+            <button className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl bg-white/[0.06] flex items-center justify-center text-[#22c55e]">
+              <Phone className="w-4 sm:w-5 h-4 sm:h-5" />
+            </button>
+            <button className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl bg-white/[0.06] flex items-center justify-center text-[#38bdf8]">
+              <MessageSquare className="w-4 sm:w-5 h-4 sm:h-5" />
+            </button>
+            <button className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl bg-white/[0.06] flex items-center justify-center text-[#22c55e]">
+              <Music className="w-4 sm:w-5 h-4 sm:h-5" />
+            </button>
+            <button className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl bg-white/[0.06] flex items-center justify-center text-[#4285F4]">
+              <Navigation className="w-4 sm:w-5 h-4 sm:h-5" />
+            </button>
+            <button onClick={() => speakPhrase('pedestrian')} className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl bg-white/[0.06] flex items-center justify-center text-[#FBBC05]">
+              <Mic className="w-4 sm:w-5 h-4 sm:h-5" />
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button onClick={() => setMuted(!muted)} className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl bg-white/[0.06] flex items-center justify-center text-slate-300">
+              {muted ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
+            </button>
+            <button onClick={() => setShowPairModal(true)} className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl bg-white/[0.06] flex items-center justify-center text-slate-300">
+              <QrCode className="w-4 h-4" />
+            </button>
+            <div className="text-white font-mono text-xs font-bold pl-1 hidden sm:block">
+              {clockStr}
+            </div>
+          </div>
+        </div>
+
+        {toastMessage && (
+          <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-50 bg-[#161d2d]/95 border border-[#38bdf8]/40 px-4 py-2 rounded-full text-xs font-mono text-white shadow-2xl animate-in fade-in slide-in-from-bottom-2">
+            {toastMessage}
+          </div>
+        )}
+
+        {showPairModal && (
+          <div className="absolute inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+            <div className="bg-[#0f1422] border border-white/10 rounded-2xl p-6 max-w-sm w-full text-center relative shadow-2xl font-mono">
+              <button onClick={() => setShowPairModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+              <Smartphone className="w-10 h-10 text-[#38bdf8] mx-auto mb-3" />
+              <h3 className="text-lg font-bold text-white">Pair Smartphone Dashcam</h3>
+              <p className="text-xs text-slate-300 mt-1 mb-4 font-sans">
+                Scan with phone camera to connect live windshield edge vision.
+              </p>
+              <div className="bg-white p-3 rounded-xl inline-block shadow-inner mb-4">
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(
+                    `${typeof window !== 'undefined' ? window.location.origin : ''}/phone`
+                  )}`}
+                  alt="QR Code"
+                  className="w-40 h-40"
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

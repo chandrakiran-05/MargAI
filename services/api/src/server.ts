@@ -196,8 +196,8 @@ export function createExpressApp(): express.Application {
         ...current.authority,
         complaintNumber,
         submissionDate,
-        acknowledgementNotes: 'Case acknowledged by BBMP Control Room. Dispatched to Ward 85 Quick Response Team (QRT).',
-        statusUrl: `https://bbmp.gov.in/sahaaya/track/${complaintNumber}`,
+        acknowledgementNotes: 'Demo submission recorded locally. No authority was contacted.',
+        statusUrl: undefined,
       },
       auditTrail: [
         ...current.auditTrail,
@@ -205,7 +205,7 @@ export function createExpressApp(): express.Application {
           timestamp: submissionDate,
           action: 'AUTHORITY_SUBMISSION',
           actor: 'MargAI Civic Dispatcher',
-          notes: `Ticket dispatched to ${current.authority.name}. Ref: ${complaintNumber}`,
+          notes: `Demo submission for ${current.authority.name}. No authority contacted. Ref: ${complaintNumber}`,
         },
       ],
     }));

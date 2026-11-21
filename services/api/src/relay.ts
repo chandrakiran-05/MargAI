@@ -83,7 +83,7 @@ export class MargAIRealtimeRelay {
   /** Short anonymous id shown on the public map (never the raw client id). */
   private publicId(clientId: string) { return 'V' + clientId.slice(-4).toUpperCase(); }
 
-  private toWatchers(eventName: string, payload: unknown, inputMode: EventEnvelope['inputMode'] = 'live') {
+  private toWatchers(eventName: EventEnvelope['eventName'], payload: unknown, inputMode: EventEnvelope['inputMode'] = 'live') {
     for (const c of this.clients.values()) {
       if (c.watcher) this.sendEnvelope(c.ws, { schemaVersion: '1.0', messageId: `w_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, eventName, sentAt: new Date().toISOString(), inputMode, payload });
     }

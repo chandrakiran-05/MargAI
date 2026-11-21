@@ -18,8 +18,10 @@
     "dev:api": "npm run dev -w services/api",
     "dev:web": "npm run dev -w apps/web",
     "start": "node services/api/dist/index.js",
-    "lint": "echo \"Linting clean\"",
-    "build:ui-preview": "npm run build:packages && npm run build:web && node scripts/prepare-ui-preview.mjs"
+    "lint": "tsc --noEmit -p apps/web/tsconfig.json && tsc --noEmit -p services/api/tsconfig.json",
+    "build:ui-preview": "npm run build:packages && npm run build:web && node scripts/prepare-ui-preview.mjs",
+    "verify": "npm test && npm run build",
+    "test:integration": "node scripts/verify-demo.cjs"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

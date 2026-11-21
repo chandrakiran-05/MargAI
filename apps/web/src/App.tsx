@@ -3,16 +3,14 @@ import { BrandMark, Navbar, TabType, VIEWS } from './components/Navbar';
 import { PublicSite } from './components/PublicSite';
 import { apiClient } from './services/apiClient';
 import {I18nProvider,isUiLanguage,translate,useI18n} from './i18n';
-import {usePremiumMotion} from './usePremiumMotion';
-const CommandCenter = lazy(() => import('./components/CommandCenter').then(module => ({ default: module.CommandCenter })));
-const DriverCompanion = lazy(() => import('./components/DriverCompanion').then(module => ({ default: module.DriverCompanion })));
-const BuildathonDeck = lazy(() => import('./components/BuildathonDeck').then(module => ({ default: module.BuildathonDeck })));
+
+const SmartphoneDashcam = lazy(() => import('./components/SmartphoneDashcam').then(module => ({ default: module.SmartphoneDashcam })));
+const InCarDisplay = lazy(() => import('./components/InCarDisplay').then(module => ({ default: module.InCarDisplay })));
 const CivicDashboard = lazy(() => import('./components/CivicDashboard').then(module => ({ default: module.CivicDashboard })));
 const GoogleStackInspector = lazy(() => import('./components/GoogleStackInspector').then(module => ({ default: module.GoogleStackInspector })));
 const DriverApp = lazy(() => import('./components/DriverApp').then(module => ({ default: module.DriverApp })));
 const LiveMap = lazy(() => import('./components/LiveMap').then(module => ({ default: module.LiveMap })));
 const DriveMap = lazy(() => import('./components/DriveMap').then(module => ({ default: module.DriveMap })));
-const InCarDisplay = lazy(() => import('./components/InCarDisplay').then(module => ({ default: module.InCarDisplay })));
 function readView(): TabType {
   const params = new URLSearchParams(window.location.search);
   const view = params.get('view');
@@ -22,7 +20,7 @@ function readView(): TabType {
   return 'public';
 }
 export const App: React.FC = () => {
-  usePremiumMotion();
+
   const [currentTab, setCurrentTab] = useState<TabType>(readView);
   const [selectedLanguage, setSelectedLanguage] = useState(() => { try { const saved=localStorage.getItem('margai-language')||'en'; return isUiLanguage(saved)?saved:'en'; } catch { return 'en'; } });
   const [isBackendConnected, setIsBackendConnected] = useState(false);
@@ -46,14 +44,15 @@ export const App: React.FC = () => {
     <Navbar currentTab={currentTab} onSelectTab={navigate} selectedLanguage={selectedLanguage} onSelectLanguage={language=>{if(isUiLanguage(language))setSelectedLanguage(language);}} isBackendConnected={isBackendConnected}/>
     <main id="main-content" className={currentTab === 'public' ? 'main-content' : 'main-content workspace-view'} tabIndex={-1}><Suspense fallback={<div className="view-loading" role="status"><span className="loading-road"/>{translate(selectedLanguage,'Loading…')}</div>}>
       {currentTab === 'public' && <PublicSite onNavigateTab={navigate} selectedLanguage={selectedLanguage}/>}
-      {currentTab === 'command-center' && <CommandCenter selectedLanguage={selectedLanguage}/>}
-      {currentTab === 'in-car' && <InCarDisplay/>}
+      {currentTab === 'command-center' && <DriveMap onNavigate={navigate}/>}
+      {currentTab === 'in-car' && <div className="road-showcase"><InCarDisplay/></div>}
       {currentTab === 'live' && <LiveMap mode="observer" onNavigate={navigate}/>}
       {currentTab === 'car' && <LiveMap mode="car" onNavigate={navigate}/>}
       {currentTab === 'app' && <DriverApp onNavigate={navigate}/>}
-      {currentTab === 'smartphone' && <DriveMap onNavigate={navigate}/>}
-      {currentTab === 'driver' && <DriverCompanion selectedLanguage={selectedLanguage}/>}
-      {currentTab === 'deck' && <BuildathonDeck onLaunchHUD={() => navigate('command-center')}/>}
+      {currentTab === 'smartphone' && <div className="camera-showcase"><SmartphoneDashcam/></div>}
+      {currentTab === 'journey' && <DriveMap onNavigate={navigate}/>}
+      {currentTab === 'driver' && <DriveMap onNavigate={navigate}/>}
+      {currentTab === 'deck' && <PublicSite onNavigateTab={navigate} selectedLanguage={selectedLanguage}/>}
       {currentTab === 'civic' && <CivicDashboard/>}
       {currentTab === 'google-stack' && <GoogleStackInspector/>}
     </Suspense></main>

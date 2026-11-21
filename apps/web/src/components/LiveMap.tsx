@@ -273,7 +273,7 @@ export const LiveMap: React.FC<{mode?: Mode; onNavigate?: (tab: any) => void}> =
             {qr && <img src={qr} alt={t('QR code to open the driver app')} width={112} height={112}/>}
             <div className="lm-cta">
               <a className="btn3d" href="?view=app">{t('Open the driver app')}</a>
-              <button className="btn3d" style={{['--b' as any]: '#fff', ['--bd' as any]: '#c9c3e6', color: 'var(--ink)'}} onClick={() => onNavigate?.('smartphone')}>{t('Run demo journey')}</button>
+              <button className="btn3d" style={{['--b' as any]: '#fff', ['--bd' as any]: '#c9c3e6', color: 'var(--ink)'}} onClick={() => onNavigate?.('journey')}>{t('Run demo journey')}</button>
             </div>
           </div>
         )}
