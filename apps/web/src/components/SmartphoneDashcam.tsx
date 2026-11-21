@@ -84,7 +84,7 @@ export const SmartphoneDashcam: React.FC = () => {
 
   // Hazards Display — now populated by real ML detections
   const [activeHazards, setActiveHazards] = useState<HazardBox[]>([]);
-  const [sightMode, setSightMode] = useState<'auto' | 'clear' | 'pedestrian' | 'pothole' | 'cattle' | 'water'>('clear');
+  const [sightMode, setSightMode] = useState<'auto' | 'clear' | 'pedestrian' | 'pothole' | 'cattle' | 'water'>('auto');
   const sightModeRef = useRef(sightMode);
   sightModeRef.current = sightMode;
 
