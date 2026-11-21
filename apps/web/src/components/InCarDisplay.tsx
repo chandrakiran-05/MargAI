@@ -265,7 +265,7 @@ export const InCarDisplay: React.FC = () => {
         call.on('close',clear);call.on('error',clear);
       });
       peer.on('connection',conn=>{
-        conn.on('data',(data:any)=>packetReceiver.current(data));
+        conn.on('data',(data:any)=>{packetReceiver.current(data);if(typeof data?.camera_b64==='string'&&conn.open)conn.send({kind:'margai.frame.received',receivedAt:Date.now()});});
         conn.on('close',()=>{if(Date.now()-lastImageAt.current>3000)setIsWebRtcConnected(false);});
       });
 
@@ -908,7 +908,7 @@ export const InCarDisplay: React.FC = () => {
                   }}
                   onLoadedData={()=>{lastVideoAt.current=Date.now();setVideoReady(true);setShowPairModal(false);}}
                   onError={()=>setVideoReady(false)}
-                  className={`w-full h-full object-fill ${videoReady ? 'block' : 'hidden'}`}
+                  className={`w-full h-full object-fill ${cameraStream ? 'block' : 'hidden'}`}
                 />
 
                 {/* 2. Base64 Frame Stream from Smartphone (DataConnection or BroadcastChannel fallback) */}
