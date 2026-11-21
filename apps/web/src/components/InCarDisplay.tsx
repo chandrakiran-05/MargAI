@@ -1082,22 +1082,24 @@ export const InCarDisplay: React.FC = () => {
               <div className="p-3 bg-white rounded-xl shadow-lg">
                 <img
                   src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(
-                    'https://10.20.20.141:5174/?mode=smartphone'
+                    typeof window !== 'undefined'
+                      ? `${window.location.origin}/?mode=smartphone`
+                      : 'https://9ffd3d1d143b50.app.lhr.life/?mode=smartphone'
                   )}`}
                   alt="Smartphone Dashcam QR"
                   className="w-44 h-44"
                 />
               </div>
               <a
-                href="https://10.20.20.141:5174/?mode=smartphone"
+                href={typeof window !== 'undefined' ? `${window.location.origin}/?mode=smartphone` : '/?mode=smartphone'}
                 target="_blank"
                 rel="noreferrer"
                 className="text-[12px] text-cyan-400 font-mono break-all font-bold hover:underline"
               >
-                https://10.20.20.141:5174/?mode=smartphone
+                {typeof window !== 'undefined' ? `${window.location.origin}/?mode=smartphone` : '/?mode=smartphone'}
               </a>
               <p className="text-[10px] text-slate-400 font-sans max-w-xs">
-                🔒 Secure HTTPS context activates hardware camera on Safari/Chrome. Tap "Advanced &gt; Proceed" if prompted.
+                🔒 Secure HTTPS context activates hardware camera on Safari/Chrome automatically.
               </p>
             </div>
 

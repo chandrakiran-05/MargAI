@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: true, // Listen on all local IP addresses (0.0.0.0) so smartphone on Wi-Fi can connect
+    allowedHosts: true, // Allow external public tunnel domains
     port: 5173,
     proxy: {
       '/v1': {
