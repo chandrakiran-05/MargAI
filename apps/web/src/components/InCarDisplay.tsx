@@ -1,3 +1,4 @@
+import {createPortal} from 'react-dom';
 import QRCode from 'qrcode';
 import { apiClient } from '../services/apiClient';
 import { LiveRelay } from '../live/relay';
@@ -146,7 +147,7 @@ const HAZARD_SPECS: Record<
 };
 
 export const InCarDisplay: React.FC = () => {
-  const [hostedPhone, setHostedPhone] = useState(false);
+  const [hostedPhone, setHostedPhone] = useState(Boolean(import.meta.env.VITE_PHONE_APP_ORIGIN) || location.hostname.endsWith('github.io'));
   const [hostedPhoneOrigin, setHostedPhoneOrigin] = useState(import.meta.env.VITE_PHONE_APP_ORIGIN || (location.hostname.endsWith('github.io') ? location.origin + location.pathname : ''));
   const [phoneOrigin, setPhoneOrigin] = useState('');
   const [pairQr, setPairQr] = useState('');
@@ -1400,15 +1401,17 @@ export const InCarDisplay: React.FC = () => {
         )}
 
         {/* QR CODE & WEBRTC PAIRING MODAL */}
-        {showPairModal && (
+        {showPairModal && createPortal(
           <div
             onClick={(e) => {
               if (e.target === e.currentTarget) setShowPairModal(false);
             }}
-            className="absolute inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 cursor-pointer"
+            className="fixed inset-0 z-[1000] bg-black/85 backdrop-blur-md flex items-start sm:items-center justify-center overflow-y-auto p-4 cursor-pointer"
           >
             <div
               onClick={(e) => e.stopPropagation()}
+              role="dialog" aria-modal="true" aria-labelledby="phone-pair-title"
+              style={{maxHeight:'calc(100dvh - 32px)',overflowY:'auto'}}
               className="bg-[#0f1422] border border-white/10 rounded-2xl p-6 max-w-sm w-full text-center relative shadow-2xl font-mono cursor-default"
             >
               <button
@@ -1421,7 +1424,7 @@ export const InCarDisplay: React.FC = () => {
               </button>
 
               <Smartphone className="w-10 h-10 text-[#38bdf8] mx-auto mb-2" />
-              <h3 className="text-lg font-bold text-white">Stream Phone Camera</h3>
+              <h3 id="phone-pair-title" className="text-lg font-bold text-white">Stream Phone Camera</h3>
               <p className="text-xs text-slate-300 mt-1 mb-3 font-sans">
                 Scan with your phone to stream live road vision into this Infotainment display.
               </p>
@@ -1479,7 +1482,7 @@ export const InCarDisplay: React.FC = () => {
                 ✕ Close Window
               </button>
             </div>
-          </div>
+          </div>, document.body
         )}
       </div>
     </div>
