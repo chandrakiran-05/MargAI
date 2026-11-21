@@ -148,12 +148,14 @@ const HAZARD_SPECS: Record<
   side: { ic: '🧍', lv: 0, n: 'Person at roadside', r: 'Near shoulder', quiet: true },
 };
 
+const HAS_ROAD_API = !location.hostname.endsWith('github.io') || Boolean(import.meta.env.VITE_API_ORIGIN);
+
 export const InCarDisplay: React.FC = () => {
   const [hostedPhone, setHostedPhone] = useState(Boolean(import.meta.env.VITE_PHONE_APP_ORIGIN) || location.hostname.endsWith('github.io'));
   const [hostedPhoneOrigin, setHostedPhoneOrigin] = useState(import.meta.env.VITE_PHONE_APP_ORIGIN || (location.hostname.endsWith('github.io') ? location.origin + location.pathname : ''));
   const [phoneOrigin, setPhoneOrigin] = useState('');
   const [pairQr, setPairQr] = useState('');
-  useEffect(() => { void apiClient.getConfig().then(config => { if (config.phoneWebOrigin) setPhoneOrigin(config.phoneWebOrigin); }).catch(() => {}); }, []);
+  useEffect(() => { if (!HAS_ROAD_API) return; void apiClient.getConfig().then(config => { if (config.phoneWebOrigin) setPhoneOrigin(config.phoneWebOrigin); }).catch(() => {}); }, []);
   // Vehicle Telemetry
   const [vehicleSpeed, setVehicleSpeed] = useState<number>(90);
   const [roadCurveType, setRoadCurveType] = useState<string>('STRAIGHT');
@@ -279,8 +281,9 @@ export const InCarDisplay: React.FC = () => {
     };
   }, [peerId]);
 
-  // LAN relay fallback: video frames work without an external WebRTC signalling server.
+  // LAN relay fallback: the static hosted viewer uses WebRTC without a REST relay.
   useEffect(() => {
+    if (!HAS_ROAD_API) return;
     const relay = new LiveRelay();
     relay.whenOpen(() => relay.send('pair.join', {code:peerId.replace(/^margai-/i,''),role:'car'}));
     relay.on('infotainment.update', event => packetReceiver.current(event.payload));
@@ -802,7 +805,7 @@ export const InCarDisplay: React.FC = () => {
             title="Use current device camera directly"
           >
             <Camera className="w-3.5 h-3.5" />
-            <span>{cameraStream ? 'Camera Active' : 'Enable Device Camera'}</span>
+            <span>{videoReady ? 'Camera active' : 'Enable Device Camera'}</span>
           </button>
 
           {/* QR Pairing for Phone Camera Stream */}
