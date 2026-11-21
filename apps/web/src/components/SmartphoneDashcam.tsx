@@ -1,3 +1,4 @@
+import { LiveRelay } from '../live/relay';
 import { apiClient } from '../services/apiClient';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
@@ -121,6 +122,17 @@ export const SmartphoneDashcam: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const bcRef = useRef<BroadcastChannel | null>(null);
+  const localRelayRef = useRef<LiveRelay | null>(null);
+  useEffect(() => {
+    const target = pairTarget || manualPairInput;
+    if (!target) return;
+    const code = target.replace(/^margai-/i, '').toUpperCase();
+    if (!/^[A-Z0-9]{4,8}$/.test(code)) return;
+    const relay = new LiveRelay(); localRelayRef.current = relay;
+    relay.whenOpen(() => relay.send('pair.join', {code,role:'phone'}));
+    relay.on('ack', event => { if (event.payload?.deliveredToDisplays > 0) setIsPeerStreaming(true); });
+    return () => { relay.close(); localRelayRef.current = null; };
+  }, [pairTarget, manualPairInput]);
   const wsRef = useRef<WebSocket | null>(null);
   const waveformHistoryRef = useRef<number[]>(Array(50).fill(0));
   const detectionLoopRef = useRef<number | null>(null);
@@ -546,6 +558,7 @@ export const SmartphoneDashcam: React.FC = () => {
 
       const tel = telemetryRef.current;
 
+      localRelayRef.current?.send('infotainment.push', { camera_b64:b64, hazards:tel.activeHazards, speed_kmh:tel.speedKmh, z_accel_g:tel.zAccelG, road_curve:tel.roadCurve });
       // Send over BroadcastChannel to Infotainment
       bcRef.current?.postMessage({
         camera_b64: b64,

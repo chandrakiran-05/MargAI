@@ -21,7 +21,8 @@
     "lint": "tsc --noEmit -p apps/web/tsconfig.json && tsc --noEmit -p services/api/tsconfig.json",
     "build:ui-preview": "npm run build:packages && npm run build:web && node scripts/prepare-ui-preview.mjs",
     "verify": "npm test && npm run build",
-    "test:integration": "node scripts/verify-demo.cjs"
+    "test:integration": "node scripts/verify-demo.cjs",
+    "dev:phone": "node scripts/local-phone-demo.cjs"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

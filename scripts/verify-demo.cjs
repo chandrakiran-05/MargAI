@@ -13,9 +13,13 @@ const bad=await fetch(origin+'/v1/observations',{method:'POST',headers:{'content
 const watch=await socket();clients.push(watch);watch.send(envelope('watch.join',{}));
 const car=await socket();clients.push(car);car.send(envelope('pair.join',{code:'TEST88',role:'car'}));
 const phone=await socket();clients.push(phone);phone.send(envelope('pair.join',{code:'TEST88',role:'phone'}));await wait(100);
-phone.send(envelope('infotainment.push',{kind:'alert',text:'Demo warning'}));await wait(200);
+const other=await socket();clients.push(other);other.send(envelope('pair.join',{code:'OTHER88',role:'car'}));await wait(100);
+const frame='data:image/jpeg;base64,dGVzdC1mcmFtZQ==';
+phone.send(envelope('infotainment.push',{kind:'alert',text:'Demo warning',camera_b64:frame,hazards:[]}));await wait(200);
 assert.ok(watch.events.some(e=>e.eventName==='watch.snapshot'));
 assert.ok(car.events.some(e=>e.eventName==='infotainment.update'&&e.payload.text==='Demo warning'));
 assert.ok(phone.events.some(e=>e.payload?.deliveredToDisplays===1));
-console.log('PASS: health, hazards, cases, input validation, watcher snapshot, phone → relay → car, delivery acknowledgement');
+assert.ok(car.events.some(e=>e.eventName==='infotainment.update'&&e.payload.camera_b64===frame));
+assert.ok(!other.events.some(e=>e.eventName==='infotainment.update'));
+console.log('PASS: health, hazards, cases, input validation, watcher snapshot, phone → relay → car, delivery acknowledgement, camera frame payload, room isolation');
 }finally{clients.forEach(ws=>ws.close());}})().catch(e=>{console.error(e);process.exitCode=1;});

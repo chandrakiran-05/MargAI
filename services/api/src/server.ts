@@ -6,7 +6,7 @@ import { geminiService } from '@margai/assistance';
 import { realtimeRelay } from './relay';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 
 export function createExpressApp(): express.Application {
   const app = express();
@@ -226,6 +226,7 @@ export function createExpressApp(): express.Application {
   // 10. System Configuration
   app.get('/v1/config', (req: Request, res: Response) => {
     res.json({
+      phoneWebOrigin: (() => { try { const value = readFileSync(path.resolve(__dirname, '../../../apps/web/certs/phone-origin.txt'), 'utf8').trim(); const url = new URL(value); return url.protocol === 'https:' ? url.origin : null; } catch { return null; } })(),
       googleMapsApiKeyConfigured: !!process.env.VITE_GOOGLE_MAPS_API_KEY,
       geminiConfigured: geminiService.isConfigured(),
       firestoreConnected: storageEngine.isFirestoreLive,

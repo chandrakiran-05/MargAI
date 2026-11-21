@@ -1,3 +1,6 @@
+import QRCode from 'qrcode';
+import { apiClient } from '../services/apiClient';
+import { LiveRelay } from '../live/relay';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Volume2,
@@ -143,6 +146,10 @@ const HAZARD_SPECS: Record<
 };
 
 export const InCarDisplay: React.FC = () => {
+  const [hostedPhone, setHostedPhone] = useState(false);
+  const [phoneOrigin, setPhoneOrigin] = useState('');
+  const [pairQr, setPairQr] = useState('');
+  useEffect(() => { void apiClient.getConfig().then(config => { if (config.phoneWebOrigin) setPhoneOrigin(config.phoneWebOrigin); }).catch(() => {}); }, []);
   // Vehicle Telemetry
   const [vehicleSpeed, setVehicleSpeed] = useState<number>(90);
   const [roadCurveType, setRoadCurveType] = useState<string>('STRAIGHT');
@@ -285,6 +292,18 @@ export const InCarDisplay: React.FC = () => {
     return () => {
       if (peer) peer.destroy();
     };
+  }, [peerId]);
+
+  // LAN relay fallback: video frames work without an external WebRTC signalling server.
+  useEffect(() => {
+    const relay = new LiveRelay();
+    relay.whenOpen(() => relay.send('pair.join', {code:peerId.replace(/^margai-/i,''),role:'car'}));
+    relay.on('infotainment.update', event => {
+      const data = event.payload;
+      if (data?.camera_b64) { setPhoneCameraB64(data.camera_b64); setIsWebRtcConnected(true); setLeftViewMode('camera'); setShowPairModal(false); }
+      if (Array.isArray(data?.hazards)) ingestPhoneHazards(data.hazards);
+    });
+    return () => relay.close();
   }, [peerId]);
 
   // Robustly Attach MediaStream to Video Elements whenever Stream or ViewMode changes
@@ -673,8 +692,10 @@ export const InCarDisplay: React.FC = () => {
   const activePairId = verifiedPeerId || peerId;
   const phonePairUrl =
     typeof window !== 'undefined'
-      ? `${window.location.origin}${window.location.pathname}?mode=smartphone&pair=${activePairId}`
+      ? hostedPhone ? `https://pbalamurali74-hue.github.io/MargAI/?mode=smartphone&pair=${activePairId}` : `${phoneOrigin || window.location.origin}${window.location.pathname}?view=smartphone&pair=${activePairId}`
       : `https://pbalamurali74-hue.github.io/MargAI/?mode=smartphone&pair=${activePairId}`;
+
+  useEffect(() => { void QRCode.toDataURL(phonePairUrl, {width:180,margin:1}).then(setPairQr).catch(() => setPairQr('')); }, [phonePairUrl]);
 
   const copyPairLink = () => {
     if (navigator.clipboard) {
@@ -1399,12 +1420,16 @@ export const InCarDisplay: React.FC = () => {
                 Scan with your phone to stream live road vision into this Infotainment display.
               </p>
 
+              <div className="flex gap-2 mb-3" role="group" aria-label="Phone connection method">
+                <button className={`flex-1 border px-2 py-2 text-xs rounded ${!hostedPhone ? 'bg-slate-600 text-white' : 'text-slate-300'}`} onClick={() => setHostedPhone(false)} aria-pressed={!hostedPhone}>Local Wi-Fi</button>
+                <button className={`flex-1 border px-2 py-2 text-xs rounded ${hostedPhone ? 'bg-slate-600 text-white' : 'text-slate-300'}`} onClick={() => setHostedPhone(true)} aria-pressed={hostedPhone}>Hosted phone page</button>
+              </div>
+              <p className="text-xs text-slate-300 mb-3">{hostedPhone ? 'Uses the existing GitHub camera page and WebRTC. Your local API is not exposed.' : 'Phone and laptop must be reachable on the same Wi-Fi. Local HTTPS needs the demo certificate.'}</p>
+              <a className="block text-xs text-cyan-300 break-all mb-3" href={phonePairUrl} target="_blank" rel="noreferrer">{phonePairUrl}</a>
               {/* QR Code */}
               <div className="bg-white p-2.5 rounded-xl inline-block shadow-inner mb-3">
                 <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(
-                    phonePairUrl
-                  )}`}
+                  src={pairQr}
                   alt="QR Code"
                   className="w-40 h-40"
                 />
