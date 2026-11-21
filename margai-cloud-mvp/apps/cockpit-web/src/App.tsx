@@ -36,7 +36,7 @@ export const App: React.FC = () => {
             }`}
           >
             <Car className="w-3.5 h-3.5" />
-            <span>Tesla MCU HUD</span>
+            <span>In-Car Infotainment</span>
           </button>
 
           <button

@@ -6,14 +6,13 @@ import {
   Radio,
   Smartphone,
   Navigation,
-  Music,
-  Fan,
-  Thermometer,
+  Eye,
+  RotateCcw,
   ShieldAlert,
-  ChevronRight,
-  Play,
-  Pause,
-  SkipForward,
+  AlertTriangle,
+  CheckCircle2,
+  MapPin,
+  Flame,
 } from 'lucide-react';
 import { DriverAlert, HazardType, RiskLevel, LocalizedMessages } from '@margai/contracts';
 import { alertAudio } from '../audio/alertAudio.js';
@@ -28,8 +27,79 @@ interface ActiveHazard {
   localized: LocalizedMessages;
 }
 
+const HAZARD_TEMPLATES: Record<
+  string,
+  { type: HazardType; riskLevel: RiskLevel; icon: string; name: string; localized: LocalizedMessages }
+> = {
+  pothole: {
+    type: 'pothole',
+    riskLevel: 'caution',
+    icon: '🕳️',
+    name: 'Pothole',
+    localized: {
+      en: 'Pothole ahead. Slow down.',
+      hi: 'आगे गड्ढा है। गति धीमी करें।',
+      ta: 'முன்னே குழி உள்ளது. வேகத்தைக் குறையுங்கள்.',
+      te: 'ముందు గుంత ఉంది. వేగం తగ్గించండి.',
+      kn: 'ಮುಂದೆ ಗುಂಡಿ ಇದೆ. ವೇಗ ಕಡಿಮೆ ಮಾಡಿ.',
+    },
+  },
+  pedestrian: {
+    type: 'pedestrian',
+    riskLevel: 'urgent',
+    icon: '🚶',
+    name: 'Pedestrian',
+    localized: {
+      en: 'Person crossing ahead. Brake gently.',
+      hi: 'आगे कोई सड़क पार कर रहा है। सावधान।',
+      ta: 'முன்னே ஒருவர் சாலையைக் கடக்கிறார். கவனம்.',
+      te: 'ముందు ఒకరు రోడ్డు దాటుతున్నారు. నెమ్మదిగా బ్రేక్ వేయండి.',
+      kn: 'ಮುಂದೆ ಒಬ್ಬರು ರಸ್ತೆ ದಾಟುತ್ತಿದ್ದಾರೆ. ನಿಧಾನವಾಗಿ ಬ್ರೇಕ್ ಹಾಕಿ.',
+    },
+  },
+  waterlogging: {
+    type: 'waterlogging',
+    riskLevel: 'caution',
+    icon: '🌊',
+    name: 'Waterlogging',
+    localized: {
+      en: 'Waterlogging ahead. Drive slowly.',
+      hi: 'आगे जलभराव है। धीरे चलें।',
+      ta: 'முன்னே தேங்கிய நீர் உள்ளது. மெதுவாகச் செல்லவும்.',
+      te: 'ముందు నీరు నిలిచింది. నెమ్మదిగా వెళ్లండి.',
+      kn: 'ಮುಂದೆ ನೀರು ನಿಂತಿದೆ. ನಿಧಾನವಾಗಿ ಚಲಿಸಿ.',
+    },
+  },
+  cattle: {
+    type: 'cattle',
+    riskLevel: 'caution',
+    icon: '🐄',
+    name: 'Stray Cattle',
+    localized: {
+      en: 'Stray cattle on road. Be alert.',
+      hi: 'सड़क पर मवेशी हैं। सतर्क रहें।',
+      ta: 'சாலையில் கால்நடைகள் உள்ளன. எச்சரிக்கை.',
+      te: 'రోడ్డుపై పశువులు ఉన్నాయి. அప్రமత్తంగా ఉండండి.',
+      kn: 'ರಸ್ತೆಯಲ್ಲಿ ದನಗಳಿವೆ. ಜಾಗರೂಕರಾಗಿರಿ.',
+    },
+  },
+  curve: {
+    type: 'sharp_curve',
+    riskLevel: 'information',
+    icon: '↪️',
+    name: 'Sharp Curve',
+    localized: {
+      en: 'Sharp curve ahead. Reduce speed.',
+      hi: 'आगे तीखा मोड़ है। गति कम करें।',
+      ta: 'முன்னே கூர்மையான வளைவு உள்ளது. வேகத்தைக் குறைக்கவும்.',
+      te: 'ముందు పదునైన మలుపు ఉంది. వేగం తగ్గించండి.',
+      kn: 'ಮುಂದೆ ತೀಕ್ಷ್ಣ ತಿರುವು ಇದೆ. ವೇಗ ಕಡಿಮೆ ಮಾಡಿ.',
+    },
+  },
+};
+
 export const InfotainmentHUD: React.FC = () => {
-  // Tesla MCU State
+  // Vehicle telemetry
   const [vehicleSpeed, setVehicleSpeed] = useState<number>(54); // km/h
   const [roadTiltDeg, setRoadTiltDeg] = useState<number>(0);
   const [isBumpShockActive, setIsBumpShockActive] = useState<boolean>(false);
@@ -37,6 +107,8 @@ export const InfotainmentHUD: React.FC = () => {
   const [currentLang, setCurrentLang] = useState<'en' | 'hi' | 'ta' | 'te' | 'kn'>('en');
   const [langMenuOpen, setLangMenuOpen] = useState<boolean>(false);
   const [muted, setMuted] = useState<boolean>(false);
+  const [viewMode, setViewMode] = useState<'road' | 'map'>('road');
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Phone Cam PiP & Telemetry
   const [phoneConnected, setPhoneConnected] = useState<boolean>(true);
@@ -53,7 +125,7 @@ export const InfotainmentHUD: React.FC = () => {
       laneOffsetM: 0.0,
       nReports: 3,
       localized: {
-        en: 'Pothole ahead in lane. Slow down.',
+        en: 'Pothole ahead. Slow down.',
         hi: 'आगे गड्ढा है। गति धीमी करें।',
         ta: 'முன்னே குழி உள்ளது. வேகத்தைக் குறையுங்கள்.',
         te: 'ముందు గుంత ఉంది. వేగం తగ్గించండి.',
@@ -65,28 +137,24 @@ export const InfotainmentHUD: React.FC = () => {
       type: 'cattle',
       riskLevel: 'information',
       distanceM: 290,
-      laneOffsetM: 2.1,
+      laneOffsetM: 2.0,
       nReports: 1,
       localized: {
-        en: 'Stray cattle at roadside.',
-        hi: 'सड़क किनारे मवेशी हैं।',
-        ta: 'சாலையோரத்தில் கால்நடைகள்.',
-        te: 'రోడ్డు పక్కన పశువులు ఉన్నాయి.',
-        kn: 'ರಸ್ತೆ ಬದಿಯಲ್ಲಿ ದನಗಳಿವೆ.',
+        en: 'Stray cattle on road. Be alert.',
+        hi: 'सड़क पर मवेशी हैं। सतर्क रहें।',
+        ta: 'சாலையில் கால்நடைகள் உள்ளன. எச்சரிக்கை.',
+        te: 'రోడ్డుపై పశువులు ఉన్నాయి. அప్రமత్తంగా ఉండండి.',
+        kn: 'ರಸ್ತೆಯಲ್ಲಿ ದನಗಳಿವೆ. ಜಾಗರೂಕರಾಗಿರಿ.',
       },
     },
   ]);
 
-  // Media Player & HVAC Dummy State for Tesla MCU realism
-  const [isPlaying, setIsPlaying] = useState<boolean>(true);
-  const [driverTemp, setDriverTemp] = useState<number>(21.5);
-  const [passengerTemp, setPassengerTemp] = useState<number>(21.5);
-
   const wsRef = useRef<WebSocket | null>(null);
   const lastLoopTimeRef = useRef<number>(performance.now());
   const mapProgressRef = useRef<number>(0);
+  const toastTimerRef = useRef<any>(null);
 
-  // 1. Live Time Clock
+  // 1. Live Clock
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
@@ -97,7 +165,14 @@ export const InfotainmentHUD: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // 2. WebSocket Connection to Cloud Run Relay
+  // 2. Toast trigger helper
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToastMessage(null), 3200);
+  };
+
+  // 3. WebSocket Connection to Cloud Run Relay
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
@@ -122,7 +197,7 @@ export const InfotainmentHUD: React.FC = () => {
         try {
           const envelope = JSON.parse(event.data);
 
-          // A. Real-time Telemetry (Speed, Geometry, Shockwave)
+          // A. Telemetry heartbeat
           if (envelope.topic === 'telemetry.heartbeat') {
             const tel = envelope.payload;
             if (tel.speedKmh !== undefined && tel.speedKmh > 0) {
@@ -138,14 +213,14 @@ export const InfotainmentHUD: React.FC = () => {
               }
             }
             if (tel.zAccelG && tel.zAccelG > 1.8 && !isBumpShockActive) {
-              triggerBumpCockpit(tel.zAccelG);
+              triggerBumpEvent(tel.zAccelG);
             }
             if (tel.frameB64) {
               setPhoneFrameB64(tel.frameB64);
             }
           }
 
-          // B. Real-time Alert Broadcast
+          // B. Real-time Hazard Alert Broadcast
           if (envelope.topic === 'alert.broadcast') {
             const alert: DriverAlert = envelope.payload;
             ingestDriverAlert(alert);
@@ -165,11 +240,12 @@ export const InfotainmentHUD: React.FC = () => {
     };
   }, [isBumpShockActive]);
 
-  // 3. Ingest Incoming Driver Alert
+  // 4. Ingest Driver Alert
   const ingestDriverAlert = (alert: DriverAlert) => {
     setHazards((prev) => {
       const exists = prev.find((h) => h.type === alert.hazardType && h.distanceM > 40);
       if (exists) {
+        showToast(`Merged: ${exists.nReports + 1} reports for approaching ${alert.hazardType}`);
         return prev.map((h) => (h.id === exists.id ? { ...h, nReports: h.nReports + 1 } : h));
       }
       return [
@@ -186,24 +262,62 @@ export const InfotainmentHUD: React.FC = () => {
       ];
     });
 
-    // Sound alert chime & speak localized phrase
     if (!muted) {
       alertAudio.playChime(alert.riskLevel);
       alertAudio.speakAlert(alert.localizedMessages, currentLang);
     }
   };
 
-  // 4. Physical Cockpit Bounce on Pothole Shockwave
-  const triggerBumpCockpit = (gVal: number) => {
+  // 5. Trigger Manual Hazard (Demo Buttons)
+  const triggerManualHazard = (key: string) => {
+    const tpl = HAZARD_TEMPLATES[key];
+    if (!tpl) return;
+
+    if (key === 'curve') {
+      setRoadTiltDeg(-5);
+      setTimeout(() => setRoadTiltDeg(0), 4000);
+    }
+
+    setHazards((prev) => {
+      const exists = prev.find((h) => h.type === tpl.type && h.distanceM > 40);
+      if (exists) {
+        showToast(`Merged: ${exists.nReports + 1} reports for ${tpl.name}`);
+        return prev.map((h) => (h.id === exists.id ? { ...h, nReports: h.nReports + 1 } : h));
+      }
+
+      showToast(`📡 Road Alert: ${tpl.name} ahead (220m) — Broadcasted to corridor!`);
+      return [
+        {
+          id: `hz_${Date.now()}`,
+          type: tpl.type,
+          riskLevel: tpl.riskLevel,
+          distanceM: 220,
+          laneOffsetM: key === 'cattle' ? 1.9 : 0.0,
+          nReports: 1,
+          localized: tpl.localized,
+        },
+        ...prev,
+      ];
+    });
+
+    if (!muted) {
+      alertAudio.playChime(tpl.riskLevel);
+      alertAudio.speakAlert(tpl.localized, currentLang);
+    }
+  };
+
+  // 6. Physical Pothole Shockwave Bounce
+  const triggerBumpEvent = (gVal: number) => {
     setIsBumpShockActive(true);
+    showToast(`Bump felt (${gVal.toFixed(2)}G): Pothole logged on road`);
     if (!muted) alertAudio.playChime('caution');
 
     setTimeout(() => {
       setIsBumpShockActive(false);
-    }, 1200);
+    }, 1000);
   };
 
-  // 5. Real-Time Distance Countdown Animation Loop
+  // 7. Distance Countdown Animation Loop
   useEffect(() => {
     let animId: number;
 
@@ -212,9 +326,8 @@ export const InfotainmentHUD: React.FC = () => {
       lastLoopTimeRef.current = timestamp;
 
       const speedMps = vehicleSpeed / 3.6;
-      mapProgressRef.current = (mapProgressRef.current + speedMps * dt * 0.1) % 1000;
+      mapProgressRef.current = (mapProgressRef.current + speedMps * dt * 0.15) % 1000;
 
-      // Decrement hazard distance based on real vehicle speed
       setHazards((prev) =>
         prev
           .map((h) => ({
@@ -231,7 +344,6 @@ export const InfotainmentHUD: React.FC = () => {
     return () => cancelAnimationFrame(animId);
   }, [vehicleSpeed]);
 
-  // Mathematical center dashed lane flow duration
   const dashFlowDuration = `${(17.5 / Math.max(vehicleSpeed / 3.6, 0.5)).toFixed(2)}s`;
 
   // Top critical hazard
@@ -240,47 +352,82 @@ export const InfotainmentHUD: React.FC = () => {
     return rank[b.riskLevel] - rank[a.riskLevel] || a.distanceM - b.distanceM;
   })[0];
 
+  const getHazardIcon = (type: HazardType) => {
+    switch (type) {
+      case 'pothole':
+        return '🕳️';
+      case 'pedestrian':
+        return '🚶';
+      case 'waterlogging':
+        return '🌊';
+      case 'cattle':
+        return '🐄';
+      case 'sharp_curve':
+        return '↪️';
+      default:
+        return '⚠️';
+    }
+  };
+
   return (
     <div
-      className={`w-full h-screen min-h-[640px] flex flex-col bg-[#0d0e10] text-slate-100 font-sans select-none overflow-hidden transition-transform duration-100 ${
-        isBumpShockActive ? 'translate-y-2.5' : ''
+      className={`w-full h-screen min-h-[600px] flex flex-col bg-[#0b0c0e] text-slate-100 font-sans select-none overflow-hidden transition-transform duration-100 ${
+        isBumpShockActive ? 'translate-y-2' : ''
       }`}
     >
-      {/* 1. TOP TESLA MCU STATUS BAR */}
-      <div className="h-10 px-4 flex items-center justify-between border-b border-white/10 bg-[#0d0e10] text-xs font-mono z-30">
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-bold text-white">{clockStr}</span>
-          <span className="text-slate-400">24°C</span>
-          <div className="flex items-center gap-1 text-slate-400">
-            <span className="font-semibold text-white">Marg</span>
-            <span className="font-semibold text-[#4285F4]">AI</span>
-            <span className="text-[10px] bg-white/10 text-slate-300 px-1.5 py-0.5 rounded">FSD v12+</span>
+      {/* =========================================================================
+          1. CLEAN TOP INFOTAINMENT HEADER
+      ========================================================================= */}
+      <header className="h-14 px-5 flex items-center justify-between border-b border-white/10 bg-[#121316] text-sm z-30">
+        {/* Brand & Clock */}
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xl font-black tracking-tight text-white">Marg</span>
+            <span className="text-xl font-black text-[#4285F4]">AI</span>
+            <span className="text-xs bg-white/10 text-slate-300 font-semibold px-2 py-0.5 rounded-full ml-1.5">
+              Infotainment
+            </span>
           </div>
+
+          <div className="h-4 w-[1px] bg-white/20" />
+
+          <span className="text-base font-semibold text-white tabular-nums tracking-wide font-mono">
+            {clockStr}
+          </span>
         </div>
 
+        {/* Center Toast notification */}
+        {toastMessage && (
+          <div className="hidden md:flex items-center gap-2 bg-[#1f2228] text-white px-3.5 py-1.5 rounded-full text-xs font-medium border border-white/15 shadow-lg animate-fade-in">
+            <Radio className="w-3.5 h-3.5 text-[#4285F4] animate-pulse" />
+            <span>{toastMessage}</span>
+          </div>
+        )}
+
+        {/* Controls: Phone Cam, Language, Audio */}
         <div className="flex items-center gap-3">
-          {/* Smartphone Link Indicator */}
+          {/* Phone Link Indicator */}
           <div
-            className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${
               phoneConnected
-                ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400'
-                : 'bg-amber-500/20 border-amber-500 text-amber-400 animate-pulse'
+                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
+                : 'bg-amber-500/15 border-amber-500/40 text-amber-400 animate-pulse'
             }`}
           >
-            <Smartphone className="w-3 h-3" />
-            <span>{phoneConnected ? `Phone Node (${phoneFps} FPS)` : 'Connecting Phone'}</span>
+            <Smartphone className="w-3.5 h-3.5" />
+            <span>{phoneConnected ? `Phone Live (${phoneFps} FPS)` : 'Connecting Phone'}</span>
           </div>
 
-          {/* Language Selector */}
+          {/* Regional Indian Language Selector */}
           <div className="relative">
             <button
               onClick={() => setLangMenuOpen(!langMenuOpen)}
-              className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-xs font-medium"
+              className="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-semibold text-white flex items-center gap-1 border border-white/10 transition-colors"
             >
               {{ en: 'English', hi: 'हिन्दी', ta: 'தமிழ்', te: 'తెలుగు', kn: 'ಕನ್ನಡ' }[currentLang]} ▾
             </button>
             {langMenuOpen && (
-              <div className="absolute right-0 top-7 z-50 bg-[#1a1b1f] border border-white/10 rounded-xl shadow-2xl py-1 text-xs min-w-[110px]">
+              <div className="absolute right-0 top-9 z-50 bg-[#1c1e24] border border-white/15 rounded-xl shadow-2xl py-1 text-xs min-w-[130px] backdrop-blur-xl">
                 {(['en', 'hi', 'ta', 'te', 'kn'] as const).map((l) => (
                   <button
                     key={l}
@@ -289,8 +436,8 @@ export const InfotainmentHUD: React.FC = () => {
                       alertAudio.setLanguage(l);
                       setLangMenuOpen(false);
                     }}
-                    className={`block w-full text-left px-3 py-1.5 hover:bg-white/10 ${
-                      currentLang === l ? 'text-[#4285F4] font-bold' : 'text-slate-300'
+                    className={`block w-full text-left px-3.5 py-2 hover:bg-white/10 transition-colors ${
+                      currentLang === l ? 'text-[#4285F4] font-bold bg-[#4285F4]/10' : 'text-slate-200'
                     }`}
                   >
                     {{ en: 'English', hi: 'हिन्दी', ta: 'தமிழ்', te: 'తెలుగు', kn: 'ಕನ್ನಡ' }[l]}
@@ -300,368 +447,543 @@ export const InfotainmentHUD: React.FC = () => {
             )}
           </div>
 
+          {/* Mute / Unmute Button */}
           <button
             onClick={() => {
               setMuted(!muted);
               alertAudio.setMuted(!muted);
             }}
-            className="p-1 rounded bg-white/10 hover:bg-white/20 text-slate-300"
+            className={`p-2 rounded-lg border transition-colors ${
+              muted
+                ? 'bg-rose-500/20 border-rose-500/40 text-rose-400'
+                : 'bg-white/10 hover:bg-white/20 border-white/10 text-white'
+            }`}
+            title={muted ? 'Unmute' : 'Mute'}
           >
-            {muted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5 text-[#4285F4]" />}
+            {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4 text-[#4285F4]" />}
           </button>
-
-          <span className="text-slate-400">82% 🔋</span>
         </div>
-      </div>
+      </header>
 
-      {/* 2. MAIN TESLA MCU SPLIT SCREEN: LEFT 38% FSD 3D ROAD | RIGHT 62% VECTOR MAP */}
-      <div className="flex-1 flex w-full overflow-hidden">
-        {/* =========================================================================
-            LEFT 38%: TESLA FSD 3D PERSPECTIVE ROAD VISUALIZATION
-        ========================================================================= */}
-        <div className="w-[38%] relative border-r border-white/10 bg-[#0f1012] flex flex-col justify-between overflow-hidden p-3">
-          {/* Top HUD: Speedometer, Gear, Speed Limit */}
-          <div className="flex items-start justify-between z-20">
-            <div>
-              <div className="flex items-baseline gap-1">
-                <span className="text-6xl font-light tracking-tight text-white tabular-nums">
-                  {vehicleSpeed}
-                </span>
-                <span className="text-xs font-mono text-slate-400">KM/H</span>
+      {/* =========================================================================
+          2. MAIN INFOTAINMENT BODY
+      ========================================================================= */}
+      <div className="flex-1 flex w-full overflow-hidden p-3 gap-3">
+        {/* =======================================================================
+            LEFT DRIVER GLANCE PANEL
+        ======================================================================= */}
+        <aside className="w-72 lg:w-80 flex flex-col gap-3 min-h-0 flex-shrink-0">
+          {/* Speedometer & Gear Tile */}
+          <div className="bg-[#14161a] border border-white/10 rounded-2xl p-4 flex flex-col justify-between shadow-xl">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-6xl font-light tracking-tight text-white tabular-nums">
+                    {vehicleSpeed}
+                  </span>
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                    km/h
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-0.5">Speedometer</p>
               </div>
-              <div className="flex items-center gap-2 text-xs font-mono mt-1 text-slate-400">
-                <span>P</span>
-                <span>R</span>
-                <span>N</span>
-                <span className="text-white font-black text-sm bg-white/20 px-1 rounded">D</span>
+
+              {/* Speed Limit Badge */}
+              <div className="w-11 h-11 rounded-full border-[3px] border-[#EA4335] bg-white flex items-center justify-center text-slate-900 font-black text-sm shadow-md">
+                50
               </div>
             </div>
 
-            {/* Speed Limit Circle */}
-            <div className="w-10 h-10 rounded-full border-2 border-[#EA4335] bg-white flex items-center justify-center text-slate-900 font-black text-sm shadow-lg">
-              50
+            {/* Gear Selector */}
+            <div className="flex items-center gap-3 font-mono text-sm pt-3 border-t border-white/5 mt-3 text-slate-500">
+              <span className="hover:text-slate-300 cursor-pointer">P</span>
+              <span className="hover:text-slate-300 cursor-pointer">R</span>
+              <span className="hover:text-slate-300 cursor-pointer">N</span>
+              <span className="px-2 py-0.5 rounded-md bg-[#4285F4] text-white font-bold shadow-sm">
+                D
+              </span>
+              <span className="ml-auto text-xs text-slate-400 font-sans">Drive Mode</span>
             </div>
           </div>
 
-          {/* 3D Road Viewport SVG */}
-          <div className="absolute inset-0 z-10 pointer-events-none">
-            <svg
-              viewBox="0 0 500 450"
-              preserveAspectRatio="xMidYMax slice"
-              className="w-full h-full"
-            >
-              <defs>
-                <linearGradient id="roadGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0" stopColor="#383b42" />
-                  <stop offset="1" stopColor="#22242a" />
-                </linearGradient>
-                <linearGradient id="horizonFade" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0" stopColor="#0f1012" />
-                  <stop offset="0.45" stopColor="#0f1012" stopOpacity="0.85" />
-                  <stop offset="1" stopColor="#0f1012" stopOpacity="0" />
-                </linearGradient>
-              </defs>
+          {/* Ahead on Road Hazard Card */}
+          <div className="bg-[#14161a] border border-white/10 rounded-2xl p-4 flex-1 flex flex-col min-h-0 shadow-xl overflow-hidden">
+            <div className="flex items-center justify-between pb-2.5 border-b border-white/10 mb-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <ShieldAlert className="w-3.5 h-3.5 text-[#4285F4]" />
+                Ahead on Road
+              </h3>
+              <span className="text-[11px] text-slate-500 font-mono">
+                {hazards.length} {hazards.length === 1 ? 'hazard' : 'hazards'}
+              </span>
+            </div>
 
-              {/* Road World (Tilts ±5° on Curves) */}
-              <g
-                style={{
-                  transform: `rotate(${roadTiltDeg}deg)`,
-                  transformOrigin: '250px 450px',
-                  transition: 'transform 0.8s cubic-bezier(0.2, 0.7, 0.2, 1)',
-                }}
-              >
-                {/* Asphalt Trapezoid */}
-                <polygon points="175,70 325,70 480,450 20,450" fill="url(#roadGrad)" />
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+              {hazards.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center p-4 text-slate-500 text-xs">
+                  <CheckCircle2 className="w-6 h-6 text-emerald-500/50 mb-1.5" />
+                  <span>Road ahead is clear</span>
+                  <span className="text-[10px] text-slate-600 mt-0.5">Scanning via phone camera & V2V</span>
+                </div>
+              ) : (
+                hazards
+                  .slice()
+                  .sort((a, b) => a.distanceM - b.distanceM)
+                  .map((h) => {
+                    const isUrgent = h.riskLevel === 'urgent';
+                    const isCaution = h.riskLevel === 'caution';
+                    const badgeBg = isUrgent ? 'bg-rose-500/20 text-rose-400 border-rose-500/40' : isCaution ? 'bg-amber-500/20 text-amber-400 border-amber-500/40' : 'bg-blue-500/20 text-blue-400 border-blue-500/40';
 
-                {/* Shoulder Boundary Lines */}
-                <line x1="175" y1="70" x2="20" y2="450" stroke="#d7dae0" strokeWidth="2.5" strokeOpacity="0.6" />
-                <line x1="325" y1="70" x2="480" y2="450" stroke="#d7dae0" strokeWidth="2.5" strokeOpacity="0.6" />
+                    return (
+                      <div
+                        key={h.id}
+                        className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 transition-colors"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="text-xl flex-shrink-0">{getHazardIcon(h.type)}</span>
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-white capitalize truncate">
+                              {h.type}
+                            </p>
+                            <span className={`inline-block text-[9px] font-bold px-1.5 py-0.2 rounded border ${badgeBg} uppercase mt-0.5`}>
+                              {h.riskLevel}
+                            </span>
+                          </div>
+                        </div>
 
-                {/* Flowing Center Dashed Line */}
-                <line
-                  x1="250"
-                  y1="70"
-                  x2="250"
-                  y2="450"
-                  stroke="#ffffff"
-                  strokeWidth="3.5"
-                  strokeOpacity="0.8"
-                  strokeDasharray="22 18"
-                  style={{
-                    animation: `flow ${dashFlowDuration} linear infinite`,
-                  }}
+                        <div className="text-right font-mono flex-shrink-0 ml-2">
+                          <span className="text-sm font-semibold text-white">
+                            {Math.round(h.distanceM)}
+                          </span>
+                          <span className="text-[10px] text-slate-400 ml-0.5">m</span>
+                        </div>
+                      </div>
+                    );
+                  })
+              )}
+            </div>
+
+            <p className="text-[10px] text-slate-500 pt-2 border-t border-white/5 mt-auto">
+              Advisory warnings only · Live V2V corridor sync
+            </p>
+          </div>
+
+          {/* Smartphone Cam Picture-in-Picture Preview Card */}
+          <div className="bg-[#14161a] border border-white/10 rounded-2xl p-2.5 shadow-xl flex flex-col gap-1.5">
+            <div className="flex items-center justify-between text-xs text-slate-400 px-1">
+              <span className="flex items-center gap-1 font-semibold text-white">
+                <Smartphone className="w-3 h-3 text-[#4285F4]" />
+                Dashcam Feed
+              </span>
+              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                LIVE
+              </span>
+            </div>
+
+            <div className="w-full aspect-video bg-black/60 rounded-xl overflow-hidden border border-white/10 relative">
+              {phoneFrameB64 ? (
+                <img
+                  src={phoneFrameB64}
+                  alt="Phone Camera"
+                  className="w-full h-full object-cover"
                 />
-
-                {/* 3D Perspective Hazards */}
-                {hazards.map((h) => {
-                  const s = 0.08 + 0.92 * (1 - Math.min(h.distanceM, 300) / 300);
-                  const y = 70 + Math.pow(s, 1.6) * 380;
-                  const x = 250 + h.laneOffsetM * 35 * s;
-                  const col = h.riskLevel === 'urgent' ? '#EA4335' : h.riskLevel === 'caution' ? '#FBBC05' : '#4285F4';
-
-                  if (h.type === 'pothole') {
-                    return (
-                      <g key={h.id} transform={`translate(${x},${y}) scale(${s})`}>
-                        <ellipse rx="36" ry="11" fill="#000" opacity="0.7" />
-                        <ellipse rx="42" ry="14" fill="none" stroke={col} strokeWidth="3" />
-                        <circle cy="-28" r="10" fill={col} />
-                        <text y="-24" textAnchor="middle" fontSize="13" fontWeight="900" fill="#111">
-                          !
-                        </text>
-                      </g>
-                    );
-                  }
-
-                  if (h.type === 'waterlogging') {
-                    return (
-                      <g key={h.id} transform={`translate(${x},${y}) scale(${s})`}>
-                        <ellipse rx="85" ry="22" fill="#1e40af" opacity="0.8" />
-                        <ellipse rx="75" ry="16" fill="#38bdf8" opacity="0.5" />
-                        <ellipse rx="88" ry="24" fill="none" stroke="#60a5fa" strokeWidth="2.5" strokeDasharray="6 4" />
-                        <circle cy="-34" r="10" fill="#38bdf8" />
-                        <text y="-30" textAnchor="middle" fontSize="12" fontWeight="bold" fill="#0f172a">
-                          🌊
-                        </text>
-                      </g>
-                    );
-                  }
-
-                  if (h.type === 'pedestrian') {
-                    return (
-                      <g key={h.id} transform={`translate(${x},${y}) scale(${s * 1.15})`}>
-                        <ellipse rx="22" ry="7" fill="#000" opacity="0.4" />
-                        <rect x="-8" y="-55" width="16" height="32" rx="6" fill="#e6e9ee" />
-                        <circle cy="-65" r="7" fill="#e6e9ee" />
-                        <circle cy="-82" r="9" fill={col} />
-                        <text y="-78" textAnchor="middle" fontSize="11" fontWeight="bold" fill="#111">
-                          🚶
-                        </text>
-                      </g>
-                    );
-                  }
-
-                  if (h.type === 'cattle') {
-                    return (
-                      <g key={h.id} transform={`translate(${x},${y}) scale(${s * 1.1})`}>
-                        <ellipse rx="28" ry="9" fill="#000" opacity="0.4" />
-                        <rect x="-14" y="-36" width="28" height="20" rx="6" fill="#e6e9ee" />
-                        <circle cx="-16" cy="-42" r="8" fill="#e6e9ee" />
-                        <circle cy="-56" r="9" fill={col} />
-                        <text y="-52" textAnchor="middle" fontSize="11" fontWeight="bold" fill="#111">
-                          🐄
-                        </text>
-                      </g>
-                    );
-                  }
-
-                  return (
-                    <g key={h.id} transform={`translate(${x},${y}) scale(${s})`}>
-                      <circle r="16" fill={col} opacity="0.85" />
-                      <text y="5" textAnchor="middle" fontSize="14">
-                        ⚠️
-                      </text>
-                    </g>
-                  );
-                })}
-              </g>
-
-              {/* Horizon Soft Fade */}
-              <rect x="0" y="0" width="500" height="180" fill="url(#horizonFade)" />
-
-              {/* Tesla Vehicle Avatar (Bottom Center) */}
-              <g transform="translate(250, 440)">
-                <ellipse cx="0" cy="-6" rx="80" ry="14" fill="#000" opacity="0.6" />
-                <path d="M-64 -26 Q-68 -60 -52 -64 L52 -64 Q68 -60 64 -26 Z" fill="#f3f4f6" />
-                <path d="M-45 -64 L-34 -102 Q-32 -106 -24 -106 L24 -106 Q32 -106 34 -102 L45 -64 Z" fill="#2d323b" />
-                <rect x="-56" y="-48" width="112" height="5" rx="2" fill="#ff3b30" />
-              </g>
-            </svg>
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 text-xs">
+                  <Smartphone className="w-6 h-6 text-[#4285F4] animate-pulse mb-1" />
+                  <span>Phone feed standby</span>
+                </div>
+              )}
+            </div>
           </div>
+        </aside>
 
-          {/* Top Floating Glass HUD Alert Pill */}
-          {topHazard && (
-            <div className="z-20 mt-4 bg-slate-900/90 border border-white/20 rounded-2xl p-2.5 backdrop-blur-xl shadow-2xl flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div
-                  className="w-9 h-9 rounded-xl flex items-center justify-center text-lg font-bold"
+        {/* =======================================================================
+            CENTER / RIGHT MAIN VIEWPORT (Road View or Map View)
+        ======================================================================= */}
+        <main className="flex-1 relative bg-[#121316] border border-white/10 rounded-2xl overflow-hidden shadow-2xl flex flex-col justify-between">
+          {/* VIEWPORT CONTENT: ROAD VIEW */}
+          {viewMode === 'road' && (
+            <div className="absolute inset-0">
+              <svg
+                viewBox="0 0 800 480"
+                preserveAspectRatio="xMidYMax slice"
+                className="w-full h-full"
+              >
+                <defs>
+                  <linearGradient id="roadGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stopColor="#30333b" />
+                    <stop offset="1" stopColor="#1e2025" />
+                  </linearGradient>
+                  <linearGradient id="horizonFade" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stopColor="#121316" />
+                    <stop offset="0.45" stopColor="#121316" stopOpacity="0.85" />
+                    <stop offset="1" stopColor="#121316" stopOpacity="0" />
+                  </linearGradient>
+                  <linearGradient id="footpathGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stopColor="#25272e" />
+                    <stop offset="1" stopColor="#181a1f" />
+                  </linearGradient>
+                </defs>
+
+                {/* Perspective Road Canvas (Tilts on curves) */}
+                <g
                   style={{
-                    backgroundColor: topHazard.riskLevel === 'urgent' ? '#EA433530' : '#FBBC0530',
-                    color: topHazard.riskLevel === 'urgent' ? '#EA4335' : '#FBBC05',
+                    transform: `rotate(${roadTiltDeg}deg)`,
+                    transformOrigin: '400px 480px',
+                    transition: 'transform 0.8s cubic-bezier(0.2, 0.7, 0.2, 1)',
                   }}
                 >
-                  {topHazard.type === 'pothole' ? '🕳️' : topHazard.type === 'cattle' ? '🐄' : '⚠️'}
+                  {/* Left & Right Sidewalks */}
+                  <polygon points="120,80 270,80 70,480 -120,480" fill="url(#footpathGrad)" />
+                  <polygon points="530,80 680,80 920,480 730,480" fill="url(#footpathGrad)" />
+
+                  {/* Asphalt Main Road */}
+                  <polygon points="270,80 530,80 730,480 70,480" fill="url(#roadGrad)" />
+
+                  {/* Road Boundary White Solid Lines */}
+                  <line x1="270" y1="80" x2="70" y2="480" stroke="#d7dae0" strokeWidth="3" strokeOpacity="0.7" />
+                  <line x1="530" y1="80" x2="730" y2="480" stroke="#d7dae0" strokeWidth="3" strokeOpacity="0.7" />
+
+                  {/* Flowing Animated Center Lane Dashed Line */}
+                  <line
+                    x1="400"
+                    y1="80"
+                    x2="400"
+                    y2="480"
+                    stroke="#ffffff"
+                    strokeWidth="4"
+                    strokeOpacity="0.85"
+                    strokeDasharray="26 20"
+                    style={{
+                      animation: `flow ${dashFlowDuration} linear infinite`,
+                    }}
+                  />
+
+                  {/* Approaching Hazard Objects in 3D Perspective */}
+                  {hazards.map((h) => {
+                    const s = 0.08 + 0.92 * (1 - Math.min(h.distanceM, 300) / 300);
+                    const y = 80 + Math.pow(s, 1.6) * 380;
+                    const x = 400 + h.laneOffsetM * 55 * s;
+                    const isUrgent = h.riskLevel === 'urgent';
+                    const isCaution = h.riskLevel === 'caution';
+                    const col = isUrgent ? '#EA4335' : isCaution ? '#FBBC05' : '#4285F4';
+
+                    if (h.type === 'pothole') {
+                      return (
+                        <g key={h.id} transform={`translate(${x},${y}) scale(${s})`}>
+                          <ellipse rx="46" ry="14" fill="#000" opacity="0.75" />
+                          <ellipse rx="52" ry="18" fill="none" stroke={col} strokeWidth="3.5" />
+                          <circle cy="-34" r="11" fill={col} />
+                          <text y="-30" textAnchor="middle" fontSize="14" fontWeight="900" fill="#111">
+                            !
+                          </text>
+                        </g>
+                      );
+                    }
+
+                    if (h.type === 'waterlogging') {
+                      return (
+                        <g key={h.id} transform={`translate(${x},${y}) scale(${s})`}>
+                          <ellipse rx="95" ry="24" fill="#1e3a8a" opacity="0.85" />
+                          <ellipse rx="82" ry="18" fill="#38bdf8" opacity="0.6" />
+                          <ellipse rx="98" ry="26" fill="none" stroke="#60a5fa" strokeWidth="3" strokeDasharray="8 6" />
+                          <circle cy="-38" r="11" fill="#38bdf8" />
+                          <text y="-33" textAnchor="middle" fontSize="13">
+                            🌊
+                          </text>
+                        </g>
+                      );
+                    }
+
+                    if (h.type === 'pedestrian') {
+                      return (
+                        <g key={h.id} transform={`translate(${x},${y}) scale(${s * 1.2})`}>
+                          <ellipse rx="26" ry="8" fill="#000" opacity="0.4" />
+                          <rect x="-9" y="-60" width="18" height="34" rx="7" fill="#e6e9ee" />
+                          <circle cy="-72" r="8" fill="#e6e9ee" />
+                          <circle cy="-92" r="10" fill={col} />
+                          <text y="-88" textAnchor="middle" fontSize="13">
+                            🚶
+                          </text>
+                        </g>
+                      );
+                    }
+
+                    if (h.type === 'cattle') {
+                      return (
+                        <g key={h.id} transform={`translate(${x},${y}) scale(${s * 1.15})`}>
+                          <ellipse rx="32" ry="10" fill="#000" opacity="0.45" />
+                          <rect x="-16" y="-38" width="32" height="22" rx="7" fill="#e6e9ee" />
+                          <circle cx="-18" cy="-46" r="9" fill="#e6e9ee" />
+                          <circle cy="-62" r="10" fill={col} />
+                          <text y="-58" textAnchor="middle" fontSize="13">
+                            🐄
+                          </text>
+                        </g>
+                      );
+                    }
+
+                    if (h.type === 'sharp_curve') {
+                      return (
+                        <g key={h.id} transform={`translate(${x},${y}) scale(${s * 1.1})`}>
+                          <circle r="18" fill={col} opacity="0.9" />
+                          <text y="6" textAnchor="middle" fontSize="15" fill="#111" fontWeight="bold">
+                            ↪️
+                          </text>
+                        </g>
+                      );
+                    }
+
+                    return (
+                      <g key={h.id} transform={`translate(${x},${y}) scale(${s})`}>
+                        <circle r="18" fill={col} />
+                        <text y="6" textAnchor="middle" fontSize="14">
+                          ⚠️
+                        </text>
+                      </g>
+                    );
+                  })}
+                </g>
+
+                {/* Horizon Soft Fade */}
+                <rect x="0" y="0" width="800" height="150" fill="url(#horizonFade)" />
+              </svg>
+            </div>
+          )}
+
+          {/* VIEWPORT CONTENT: NAVIGATION MAP VIEW */}
+          {viewMode === 'map' && (
+            <div className="absolute inset-0">
+              <svg className="w-full h-full" viewBox="0 0 800 480" preserveAspectRatio="none">
+                <rect width="800" height="480" fill="#15171b" />
+
+                {/* City Blocks */}
+                <rect x="40" y="30" width="160" height="110" rx="8" fill="#1e2126" />
+                <rect x="230" y="30" width="220" height="110" rx="8" fill="#1e2126" />
+                <rect x="480" y="30" width="280" height="110" rx="8" fill="#1e2126" />
+
+                <rect x="40" y="210" width="180" height="150" rx="8" fill="#1e2126" />
+                <rect x="250" y="210" width="200" height="150" rx="8" fill="#1e2126" />
+                <rect x="480" y="210" width="280" height="150" rx="8" fill="#1e2126" />
+
+                {/* Green Park & Lake */}
+                <rect x="480" y="30" width="280" height="110" rx="8" fill="#13291b" />
+                <ellipse cx="620" cy="85" rx="80" ry="32" fill="#10283b" />
+                <text x="620" y="89" textAnchor="middle" fontSize="11" fill="#6c97ff" opacity="0.7">
+                  Cubbon Lake
+                </text>
+
+                {/* Road Network Grid */}
+                <path d="M0,170 H800 M0,390 H800 M200,0 V480 M460,0 V480" stroke="#2a2e36" strokeWidth="20" fill="none" />
+                <path d="M0,170 H800 M0,390 H800 M200,0 V480 M460,0 V480" stroke="#373d48" strokeWidth="15" fill="none" />
+
+                {/* Active Navigation Route */}
+                <path
+                  d="M80,170 L460,170 L460,340 L760,340"
+                  stroke="#4285F4"
+                  strokeWidth="9"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  fill="none"
+                  opacity="0.95"
+                />
+
+                {/* Moving Vehicle Navigation Arrow */}
+                <g transform="translate(320, 170) rotate(90)">
+                  <circle r="22" fill="#4285F4" opacity="0.25" />
+                  <path d="M0 -15 L9 9 L0 4 L-9 9 Z" fill="#4285F4" stroke="#fff" strokeWidth="2" />
+                </g>
+
+                {/* Hazard Pins on Map */}
+                {hazards.map((h, i) => (
+                  <g key={h.id} transform={`translate(${460 + i * 90}, ${170 + i * 50})`}>
+                    <circle r="14" fill={h.riskLevel === 'urgent' ? '#EA4335' : '#FBBC05'} />
+                    <text y="5" textAnchor="middle" fontSize="11">
+                      {getHazardIcon(h.type)}
+                    </text>
+                  </g>
+                ))}
+              </svg>
+
+              {/* Turn-by-Turn Instruction Banner */}
+              <div className="absolute top-4 left-4 z-20 bg-[#191b21]/95 border border-white/20 rounded-2xl p-3 backdrop-blur-xl shadow-2xl flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#4285F4] flex items-center justify-center text-white">
+                  <Navigation className="w-5 h-5 rotate-45" />
                 </div>
                 <div>
-                  <p className="text-[10px] uppercase font-bold text-slate-400">
-                    {topHazard.riskLevel.toUpperCase()} · Ahead in lane
-                  </p>
-                  <p className="text-xs font-bold text-white leading-tight">
-                    {topHazard.localized[currentLang] || topHazard.localized.en}
-                  </p>
+                  <p className="text-[11px] text-slate-400">In 280 meters</p>
+                  <p className="text-sm font-bold text-white">Turn right onto Outer Ring Road</p>
                 </div>
               </div>
 
-              <div className="text-right font-mono pr-1">
-                <span className="text-xl font-light text-white">{Math.round(topHazard.distanceM)}</span>
-                <span className="text-[10px] text-slate-400 ml-1">m</span>
+              {/* Route ETA Pill */}
+              <div className="absolute bottom-4 left-4 z-20 bg-[#191b21]/90 border border-white/20 rounded-xl px-3 py-1.5 backdrop-blur-xl flex items-center gap-2 text-xs">
+                <span className="font-bold text-white">14 min</span>
+                <span className="text-slate-400">· 6.2 km · 1:12 PM arrival</span>
               </div>
             </div>
           )}
 
-          {/* Picture-in-Picture Phone Rear Camera Feed (Bottom Left) */}
-          <div className="z-20 self-end w-36 aspect-video bg-black/80 rounded-xl overflow-hidden border border-white/20 shadow-2xl relative">
-            {phoneFrameB64 ? (
-              <img src={phoneFrameB64} alt="Phone Cam PiP" className="w-full h-full object-cover" />
+          {/* =====================================================================
+              TOP FLOATING ALERT BANNER (Prominent In-Car Hazard Warning)
+          ===================================================================== */}
+          <div className="z-20 p-4 w-full flex justify-center pointer-events-none">
+            {topHazard ? (
+              <div
+                className={`pointer-events-auto max-w-xl w-full rounded-2xl p-3.5 backdrop-blur-2xl shadow-2xl flex items-center justify-between border transition-all ${
+                  topHazard.riskLevel === 'urgent'
+                    ? 'bg-rose-950/80 border-rose-500/60 shadow-rose-950/50 animate-pulse'
+                    : 'bg-slate-900/90 border-amber-500/50 shadow-black/60'
+                }`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div
+                    className="w-11 h-11 rounded-xl flex items-center justify-center text-2xl flex-shrink-0"
+                    style={{
+                      backgroundColor:
+                        topHazard.riskLevel === 'urgent'
+                          ? '#EA433530'
+                          : topHazard.riskLevel === 'caution'
+                          ? '#FBBC0530'
+                          : '#4285F430',
+                    }}
+                  >
+                    {getHazardIcon(topHazard.type)}
+                  </div>
+
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded ${
+                          topHazard.riskLevel === 'urgent'
+                            ? 'bg-rose-500 text-white'
+                            : 'bg-amber-500 text-slate-950 font-black'
+                        }`}
+                      >
+                        {topHazard.riskLevel}
+                      </span>
+                      <span className="text-[11px] text-slate-300 font-medium truncate">
+                        Approaching in your lane
+                      </span>
+                    </div>
+
+                    <p className="text-sm font-bold text-white mt-0.5 leading-snug truncate">
+                      {topHazard.localized[currentLang] || topHazard.localized.en}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 pl-3 border-l border-white/10 flex-shrink-0">
+                  <div className="text-right font-mono">
+                    <span className="text-2xl font-light text-white">
+                      {Math.max(0, Math.round(topHazard.distanceM))}
+                    </span>
+                    <span className="text-xs text-slate-400 ml-1">m</span>
+                  </div>
+
+                  {/* Repeat Spoken Audio Button */}
+                  <button
+                    onClick={() => {
+                      alertAudio.playChime(topHazard.riskLevel);
+                      alertAudio.speakAlert(topHazard.localized, currentLang);
+                    }}
+                    className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors"
+                    title="Repeat voice alert"
+                  >
+                    <Volume2 className="w-4 h-4 text-[#4285F4]" />
+                  </button>
+                </div>
+              </div>
             ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center text-[10px] text-slate-400">
-                <Smartphone className="w-4 h-4 text-[#4285F4] animate-pulse mb-1" />
-                <span>Phone PiP Live</span>
+              <div className="bg-slate-900/80 border border-white/10 rounded-full px-4 py-1.5 backdrop-blur-xl flex items-center gap-2 text-xs text-slate-400 shadow-lg">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>Scanning road corridor · Clear ahead</span>
               </div>
             )}
-            <span className="absolute top-1 left-1 bg-black/70 px-1 py-0.5 rounded text-[8px] font-mono text-emerald-400">
-              📱 Dashcam
+          </div>
+
+          {/* Bottom view label */}
+          <div className="z-10 p-3 flex items-center justify-between text-xs text-slate-400">
+            <span className="bg-black/60 px-2.5 py-1 rounded-lg backdrop-blur-md border border-white/10">
+              {viewMode === 'road' ? '🛣️ 3D Perspective Road Vision' : '🗺️ Vector Navigation Map'}
             </span>
           </div>
-        </div>
-
-        {/* =========================================================================
-            RIGHT 62%: TESLA NAVIGATION VECTOR MAP & MEDIA/HVAC DOCK
-        ========================================================================= */}
-        <div className="w-[62%] relative bg-[#15171b] flex flex-col justify-between overflow-hidden">
-          {/* Navigation Vector Map SVG */}
-          <svg className="absolute inset-0 w-full h-full" viewBox="0 0 800 500" preserveAspectRatio="none">
-            {/* Background land */}
-            <rect width="800" height="500" fill="#15171b" />
-
-            {/* City blocks */}
-            <rect x="40" y="40" width="160" height="120" rx="8" fill="#1e2126" />
-            <rect x="240" y="40" width="220" height="120" rx="8" fill="#1e2126" />
-            <rect x="500" y="40" width="260" height="120" rx="8" fill="#1e2126" />
-
-            <rect x="40" y="220" width="180" height="160" rx="8" fill="#1e2126" />
-            <rect x="260" y="220" width="200" height="160" rx="8" fill="#1e2126" />
-            <rect x="500" y="220" width="260" height="160" rx="8" fill="#1e2126" />
-
-            {/* Park & Water */}
-            <rect x="500" y="40" width="260" height="120" rx="8" fill="#13291b" />
-            <ellipse cx="620" cy="90" rx="80" ry="35" fill="#10283b" />
-            <text x="620" y="94" textAnchor="middle" fontSize="11" fill="#6c97ff" opacity="0.6">
-              Cubbon Lake
-            </text>
-
-            {/* Road Network Grid */}
-            <path d="M0,190 H800 M0,410 H800 M210,0 V500 M480,0 V500" stroke="#2f343c" strokeWidth="18" fill="none" />
-            <path d="M0,190 H800 M0,410 H800 M210,0 V500 M480,0 V500" stroke="#3d444f" strokeWidth="14" fill="none" />
-
-            {/* Active Navigation Route (Blue Neon Polyline) */}
-            <path
-              d="M100,190 L480,190 L480,360 L780,360"
-              stroke="#4285F4"
-              strokeWidth="10"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              fill="none"
-              opacity="0.95"
-            />
-
-            {/* Vehicle Location on Map */}
-            <g transform="translate(320, 190) rotate(90)">
-              <circle r="24" fill="#4285F4" opacity="0.25" />
-              <path d="M0 -16 L10 10 L0 5 L-10 10 Z" fill="#4285F4" stroke="#fff" strokeWidth="2" />
-            </g>
-
-            {/* POI & Hazard Markers on Map */}
-            <g transform="translate(480, 190)">
-              <circle r="14" fill="#EA4335" />
-              <text y="5" textAnchor="middle" fontSize="12">
-                🕳️
-              </text>
-            </g>
-
-            <g transform="translate(640, 360)">
-              <circle r="14" fill="#FBBC05" />
-              <text y="5" textAnchor="middle" fontSize="12">
-                🐄
-              </text>
-            </g>
-          </svg>
-
-          {/* Top Navigation Banner */}
-          <div className="z-20 m-4 max-w-md bg-slate-900/90 border border-white/20 rounded-2xl p-3.5 backdrop-blur-xl shadow-2xl flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-xl bg-[#4285F4] flex items-center justify-center text-white">
-              <Navigation className="w-6 h-6 rotate-45" />
-            </div>
-            <div className="flex-1">
-              <p className="text-xs text-slate-400">In 280 meters</p>
-              <p className="text-sm font-bold text-white">Turn right onto Outer Ring Road</p>
-            </div>
-            <div className="text-right border-l border-white/10 pl-3">
-              <p className="text-sm font-bold text-white">14 min</p>
-              <p className="text-[11px] text-slate-400">6.2 km</p>
-            </div>
-          </div>
-
-          {/* Bottom Floating Media Player & HVAC Dock */}
-          <div className="z-20 m-4 flex flex-col gap-2">
-            {/* Spotify / Media Dock */}
-            <div className="bg-slate-900/85 border border-white/10 rounded-2xl p-2.5 backdrop-blur-xl flex items-center justify-between text-xs">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-                  <Music className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="font-bold text-white text-xs">A.R. Rahman – Jai Ho</p>
-                  <p className="text-[10px] text-slate-400">Slumdog Millionaire OST</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setIsPlaying(!isPlaying)}
-                  className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white"
-                >
-                  {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-                </button>
-                <button className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white">
-                  <SkipForward className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Tesla MCU HVAC Climate Bar */}
-            <div className="bg-black/90 border border-white/10 rounded-2xl px-4 py-2 flex items-center justify-between text-xs font-mono">
-              <div className="flex items-center gap-2">
-                <Thermometer className="w-4 h-4 text-slate-400" />
-                <button onClick={() => setDriverTemp(driverTemp - 0.5)} className="text-slate-400 hover:text-white">
-                  -
-                </button>
-                <span className="font-bold text-white text-sm">{driverTemp.toFixed(1)}°C</span>
-                <button onClick={() => setDriverTemp(driverTemp + 0.5)} className="text-slate-400 hover:text-white">
-                  +
-                </button>
-              </div>
-
-              <div className="flex items-center gap-4 text-slate-400">
-                <span className="cursor-pointer hover:text-white">♨️ Front</span>
-                <span className="cursor-pointer hover:text-white">💺 Left</span>
-                <Fan className="w-4 h-4 text-[#4285F4]" />
-                <span className="cursor-pointer hover:text-white">💺 Right</span>
-                <span className="cursor-pointer hover:text-white">♨️ Rear</span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button onClick={() => setPassengerTemp(passengerTemp - 0.5)} className="text-slate-400 hover:text-white">
-                  -
-                </button>
-                <span className="font-bold text-white text-sm">{passengerTemp.toFixed(1)}°C</span>
-                <button onClick={() => setPassengerTemp(passengerTemp + 0.5)} className="text-slate-400 hover:text-white">
-                  +
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        </main>
       </div>
+
+      {/* =========================================================================
+          3. CLEAN AUTOMOTIVE TOUCH DOCK (BOTTOM CONTROLS)
+      ========================================================================= */}
+      <footer className="h-16 px-4 bg-[#121316] border-t border-white/10 flex items-center justify-between gap-2 z-30">
+        {/* Left: View Mode Toggle */}
+        <div className="flex items-center gap-1.5 bg-white/5 p-1 rounded-xl border border-white/10">
+          <button
+            onClick={() => setViewMode('road')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              viewMode === 'road'
+                ? 'bg-[#4285F4] text-white shadow-md'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <span>🛣️</span>
+            <span>Road View</span>
+          </button>
+
+          <button
+            onClick={() => setViewMode('map')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              viewMode === 'map'
+                ? 'bg-[#4285F4] text-white shadow-md'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <span>🗺️</span>
+            <span>Map View</span>
+          </button>
+        </div>
+
+        {/* Center: Live Hazard Simulation Triggers */}
+        <div className="hidden sm:flex items-center gap-1.5">
+          <span className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold mr-1">
+            Simulate:
+          </span>
+
+          {Object.keys(HAZARD_TEMPLATES).map((key) => {
+            const t = HAZARD_TEMPLATES[key];
+            return (
+              <button
+                key={key}
+                onClick={() => triggerManualHazard(key)}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-xs font-semibold text-slate-200 transition-all hover:scale-105 active:scale-95"
+              >
+                <span>{t.icon}</span>
+                <span>{t.name}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Right: Bump simulation & Clear */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => triggerBumpEvent(2.4)}
+            className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-xs font-semibold text-slate-300 transition-colors flex items-center gap-1"
+            title="Simulate accelerometer shockwave"
+          >
+            <span>⚡ Bump (2.4G)</span>
+          </button>
+
+          {hazards.length > 0 && (
+            <button
+              onClick={() => setHazards([])}
+              className="px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 text-xs font-semibold border border-white/10 transition-colors"
+              title="Clear active hazards"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      </footer>
     </div>
   );
 };

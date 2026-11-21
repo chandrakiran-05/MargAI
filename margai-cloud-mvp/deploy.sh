@@ -78,7 +78,7 @@ COCKPIT_URL=$(gcloud run services describe margai-cockpit-web --region="$REGION"
 
 echo "=========================================================================="
 echo "🎉 MargAI Production Deployment Complete!"
-echo "🚗 Tesla MCU Infotainment HUD: $COCKPIT_URL/infotainment"
+echo "🚗 In-Car Infotainment Screen: $COCKPIT_URL/infotainment"
 echo "📱 Smartphone Edge-ML Cam:    $COCKPIT_URL/phone"
 echo "📡 Cloud Run WebSocket Relay:   $RELAY_URL/ws"
 echo "🩺 Health Check Endpoint:       $RELAY_URL/health"
