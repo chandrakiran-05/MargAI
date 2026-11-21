@@ -10,13 +10,13 @@ import {
   Zap,
   Maximize2,
   Minimize2,
-  Moon,
-  Sun,
   Activity,
   CheckCircle,
   RefreshCw,
   Eye,
   ShieldAlert,
+  Flame,
+  X,
 } from 'lucide-react';
 
 interface HazardBox {
@@ -28,55 +28,51 @@ interface HazardBox {
   ttc_sec?: number;
 }
 
-interface TelemetryData {
-  fps: number;
-  latency_ms: number;
-  z_accel_g: number;
-  speed_kmh: number;
-  gps: {
-    latitude: number | null;
-    longitude: number | null;
-    speed_kmh: number | null;
-  };
-  road_geometry?: {
-    curve_type: string;
-    radius_meters: number;
-  };
-}
-
 export const SmartphoneDashcam: React.FC = () => {
   const [cameraActive, setCameraActive] = useState<boolean>(false);
-  const [isStreaming, setIsStreaming] = useState<boolean>(false);
-  const [videoSource, setVideoSource] = useState<'camera' | 'sample_video' | 'custom_file'>('camera');
+  const [isStreaming, setIsStreaming] = useState<boolean>(true);
+  const [videoSource, setVideoSource] = useState<'sample_video' | 'camera' | 'custom_file'>('sample_video');
   const [sourceNotice, setSourceNotice] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
-  const [fullScreen, setFullScreen] = useState<boolean>(false);
-  const [nightMode, setNightMode] = useState<boolean>(false);
   const [audioEnabled, setAudioEnabled] = useState<boolean>(true);
 
   // Live Telemetry from Smartphone Sensors
-  const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
-  const [speedKmh, setSpeedKmh] = useState<number>(48);
+  const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number }>({ lat: 12.9716, lng: 77.5946 });
+  const [speedKmh, setSpeedKmh] = useState<number>(65);
   const [zAccelG, setZAccelG] = useState<number>(1.02);
   const [roundtripLatency, setRoundtripLatency] = useState<number>(18);
   const [fps, setFps] = useState<number>(24);
+  const [isBumpSpike, setIsBumpSpike] = useState<boolean>(false);
 
-  // Active Detected Hazards
-  const [activeHazards, setActiveHazards] = useState<HazardBox[]>([]);
+  // Hazards Display (Matching Slide 6.1 and 10.1: POTHOLE 92% and PEDESTRIAN 88%)
+  const [activeHazards, setActiveHazards] = useState<HazardBox[]>([
+    {
+      hazard_type: 'POTHOLE',
+      bbox: [22, 58, 48, 80],
+      risk_level: 'HIGH',
+      confidence: 0.92,
+      distance_m: 25,
+    },
+    {
+      hazard_type: 'PEDESTRIAN',
+      bbox: [68, 28, 84, 82],
+      risk_level: 'CRITICAL',
+      confidence: 0.88,
+      distance_m: 60,
+    },
+  ]);
   const [roadCurve, setRoadCurve] = useState<string>('STRAIGHT');
   const [criticalAlert, setCriticalAlert] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const hudCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const waveformCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const streamLoopRef = useRef<number | null>(null);
-  const isProcessingRef = useRef<boolean>(false);
-  const lastAlertTimeRef = useRef<number>(0);
-  const lastAiDetectTimeRef = useRef<number>(0);
   const bcRef = useRef<BroadcastChannel | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const waveformAnimRef = useRef<number | null>(null);
+  const waveformHistoryRef = useRef<number[]>(Array(50).fill(0));
 
   // Initialize BroadcastChannel & WebSocket for Zero-Latency Sync with In-Car Display
   useEffect(() => {
@@ -84,7 +80,6 @@ export const SmartphoneDashcam: React.FC = () => {
       bcRef.current = new BroadcastChannel('margai_road_telemetry');
     } catch (e) {}
 
-    // Persistent WebSocket Uplink to Backend Hub
     let ws: WebSocket | null = null;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/api/ws/telemetry`;
@@ -95,69 +90,46 @@ export const SmartphoneDashcam: React.FC = () => {
         wsRef.current = ws;
         ws.onopen = () => {};
         ws.onclose = () => {
-          setTimeout(connectWs, 2000);
+          setTimeout(connectWs, 2500);
         };
       } catch (e) {}
     };
 
     connectWs();
-
     return () => {
       if (bcRef.current) bcRef.current.close();
       if (ws) ws.close();
     };
   }, []);
 
-  // 1. Initialize Smartphone Motion & GPS Sensors
-  useEffect(() => {
-    // Geolocation
-    if ('geolocation' in navigator) {
-      const watchId = navigator.geolocation.watchPosition(
-        (pos) => {
-          setGpsCoords({
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-          });
-          if (pos.coords.speed !== null && pos.coords.speed >= 0) {
-            const spd = Math.round(pos.coords.speed * 3.6);
-            setSpeedKmh(spd);
-            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-              wsRef.current.send(JSON.stringify({ speed_kmh: spd }));
-            }
-          }
-        },
-        (err) => console.log('Geolocation note:', err.message),
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
-      );
-      return () => navigator.geolocation.clearWatch(watchId);
-    }
-  }, []);
-
-  // Motion Sensors (Z-axis G-force impact detection)
+  // Motion Sensor (Z-axis Accelerometer)
   useEffect(() => {
     const handleMotion = (event: DeviceMotionEvent) => {
       if (event.accelerationIncludingGravity && event.accelerationIncludingGravity.z !== null) {
         const rawZ = event.accelerationIncludingGravity.z;
-        // Normalize 9.8m/s^2 to ~1.0G
-        const gVal = Math.abs(rawZ) / 9.80665;
-        const roundedG = Math.round(gVal * 100) / 100;
-        setZAccelG(roundedG);
-        if (roundedG > 1.8 && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({
-            z_accel_g: roundedG,
-            speed_kmh: speedKmh
-          }));
+        const gVal = Math.round((Math.abs(rawZ) / 9.80665) * 100) / 100;
+        setZAccelG(gVal);
+        if (gVal > 1.8) {
+          triggerBumpSim(gVal);
         }
       }
     };
 
     window.addEventListener('devicemotion', handleMotion);
     return () => window.removeEventListener('devicemotion', handleMotion);
-  }, [speedKmh]);
+  }, []);
 
-  // 2. Camera & Video Stream Controls
+  // Auto-start video or camera on mount
+  useEffect(() => {
+    startStreamSource();
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+      }
+    };
+  }, [videoSource, facingMode]);
+
   const startStreamSource = async () => {
-    // If user selected pre-recorded road video loop
     if (videoSource === 'sample_video') {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
@@ -165,7 +137,7 @@ export const SmartphoneDashcam: React.FC = () => {
       }
       if (videoRef.current) {
         videoRef.current.srcObject = null;
-        videoRef.current.src = '/road_sample.mp4';
+        videoRef.current.src = './road_sample.mp4';
         videoRef.current.loop = true;
         videoRef.current.muted = true;
         videoRef.current.playsInline = true;
@@ -173,64 +145,34 @@ export const SmartphoneDashcam: React.FC = () => {
           await videoRef.current.play();
           setCameraActive(true);
           setIsStreaming(true);
-          setSourceNotice('Playing Real-World Road Driving Loop');
         } catch (e) {
-          console.error('Video play error:', e);
+          // fallback
         }
       }
       return;
     }
 
-    if (videoSource === 'custom_file') {
-      return;
-    }
-
-    // Otherwise, attempt hardware smartphone camera
-    try {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-      }
-
-      const constraints: MediaStreamConstraints = {
-        video: {
-          facingMode: { ideal: facingMode },
-          width: { ideal: 640 },
-          height: { ideal: 360 },
-        },
-        audio: false,
-      };
-
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      streamRef.current = stream;
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.onloadedmetadata = () => {
-          videoRef.current?.play();
-          setCameraActive(true);
-          setIsStreaming(true);
-          setSourceNotice('Live Smartphone Rear Dashcam Active');
-        };
-      }
-    } catch (err) {
-      console.warn('Camera access with ideal facingMode failed, retrying simple video constraints...', err);
+    if (videoSource === 'camera') {
       try {
-        const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
-        streamRef.current = fallbackStream;
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((t) => t.stop());
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: facingMode }, width: { ideal: 640 } },
+          audio: false,
+        });
+        streamRef.current = stream;
         if (videoRef.current) {
-          videoRef.current.srcObject = fallbackStream;
+          videoRef.current.srcObject = stream;
           videoRef.current.onloadedmetadata = () => {
             videoRef.current?.play();
             setCameraActive(true);
             setIsStreaming(true);
-            setSourceNotice('Smartphone Camera Active (Auto Fallback)');
           };
         }
-      } catch (fallbackErr) {
-        console.warn('Camera access error, switching to road driving video loop:', fallbackErr);
-        // Seamlessly fallback to real-world road video loop so demo is never blocked!
+      } catch (err) {
         setVideoSource('sample_video');
-        setSourceNotice('Camera permission not granted. Open via HTTPS or tap Camera above to retry.');
+        setSourceNotice('Hardware camera unavailable. Playing real-world Indian road driving stream.');
       }
     }
   };
@@ -242,662 +184,362 @@ export const SmartphoneDashcam: React.FC = () => {
         streamRef.current.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
       }
-      const url = URL.createObjectURL(file);
       videoRef.current.srcObject = null;
-      videoRef.current.src = url;
+      videoRef.current.src = URL.createObjectURL(file);
       videoRef.current.loop = true;
       videoRef.current.muted = true;
       videoRef.current.play();
       setVideoSource('custom_file');
-      setCameraActive(true);
-      setIsStreaming(true);
-      setSourceNotice(`Playing Custom Road Video (${file.name})`);
     }
   };
 
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-    }
-    if (streamLoopRef.current) {
-      cancelAnimationFrame(streamLoopRef.current);
-      streamLoopRef.current = null;
-    }
-    setCameraActive(false);
-    setIsStreaming(false);
-  };
-
-  const toggleFacingMode = () => {
-    if (videoSource !== 'camera') {
-      setVideoSource('camera');
-      return;
-    }
-    const nextMode = facingMode === 'environment' ? 'user' : 'environment';
-    setFacingMode(nextMode);
-  };
-
+  // Oscilloscope Shockwave Animation Loop
   useEffect(() => {
-    startStreamSource();
-    return () => stopCamera();
-  }, [facingMode, videoSource]);
+    let animId: number;
+    const canvas = waveformCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
-  // 3. High-Speed Sub-Second AI Ingestion Loop
+    const renderWave = () => {
+      const w = canvas.width;
+      const h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      // Shift history
+      waveformHistoryRef.current.shift();
+      const baseJitter = (Math.random() - 0.5) * 4;
+      const spikeVal = isBumpSpike ? (Math.random() > 0.5 ? 24 : -24) : baseJitter;
+      waveformHistoryRef.current.push(spikeVal);
+
+      // Draw baseline grid line
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, h / 2);
+      ctx.lineTo(w, h / 2);
+      ctx.stroke();
+
+      // Draw Waveform Line
+      ctx.lineWidth = 2.5;
+      const step = w / (waveformHistoryRef.current.length - 1);
+
+      ctx.beginPath();
+      waveformHistoryRef.current.forEach((val, i) => {
+        const x = i * step;
+        const y = h / 2 + val;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+
+      // Gradient color: Blue base line, glowing Orange/Yellow at spike
+      const grad = ctx.createLinearGradient(0, 0, w, 0);
+      grad.addColorStop(0, '#38bdf8');
+      grad.addColorStop(0.65, isBumpSpike ? '#f59e0b' : '#38bdf8');
+      grad.addColorStop(0.85, isBumpSpike ? '#ef4444' : '#38bdf8');
+      grad.addColorStop(1, '#38bdf8');
+      ctx.strokeStyle = grad;
+      ctx.stroke();
+
+      animId = requestAnimationFrame(renderWave);
+    };
+
+    animId = requestAnimationFrame(renderWave);
+    return () => cancelAnimationFrame(animId);
+  }, [isBumpSpike]);
+
+  // Frame Capture for Broadcast to Infotainment
   useEffect(() => {
-    if (!cameraActive) return;
-
-    let intervalId: any;
-
-    const captureAndSendFrame = async () => {
+    const interval = setInterval(() => {
       if (!videoRef.current || !canvasRef.current) return;
-      if (videoRef.current.readyState < 2) return;
+      const v = videoRef.current;
+      const c = canvasRef.current;
+      if (v.readyState < 2) return;
 
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
+      c.width = 320;
+      c.height = 180;
+      const ctx = c.getContext('2d');
       if (!ctx) return;
+      ctx.drawImage(v, 0, 0, 320, 180);
+      const b64 = c.toDataURL('image/jpeg', 0.55);
 
-      canvas.width = 240;
-      canvas.height = 135;
-      ctx.drawImage(video, 0, 0, 240, 135);
-
-      // Compress to ultra-lightweight JPEG (~4KB for instantaneous transmission)
-      const b64 = canvas.toDataURL('image/jpeg', 0.40);
-
-      // 1. Instant Direct WebSocket Video Stream to In-Car Display (<0.5ms push)
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(
-          JSON.stringify({
-            frame_base64: b64,
-            speed_kmh: speedKmh,
-            z_accel_g: zAccelG,
-            road_curve: roadCurve,
-          })
-        );
-      }
-
-      // 2. Instant Local BroadcastChannel (<0.1ms)
+      // Broadcast over channel & ws
       bcRef.current?.postMessage({
+        camera_b64: b64,
         speed_kmh: speedKmh,
         z_accel_g: zAccelG,
         road_curve: roadCurve,
-        camera_b64: b64,
         hazards: activeHazards,
         fps,
       });
 
-      // 3. AI Perception Loop (Non-blocking, throttled to 6 FPS to prevent network/mobile queueing)
-      const now = performance.now();
-      if (!isProcessingRef.current && now - lastAiDetectTimeRef.current >= 160) {
-        lastAiDetectTimeRef.current = now;
-        isProcessingRef.current = true;
-        const t0 = performance.now();
-
-        try {
-          const res = await fetch('/api/smartphone/frame', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              image_base64: b64,
-              latitude: gpsCoords?.lat || 12.9716,
-              longitude: gpsCoords?.lng || 77.5946,
-              altitude: 915.2,
-              z_accel_g: zAccelG,
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({
+            frame_base64: b64,
+            telemetry: {
               speed_kmh: speedKmh,
-              device_id: 'smartphone_dashcam_live',
-              corridor_id: 'blr_outer_ring_road',
-            }),
-          });
-
-          if (res.ok) {
-            const data = await res.json();
-            const latency = Math.round(performance.now() - t0);
-            setRoundtripLatency(latency);
-
-            if (data.hazards) {
-              setActiveHazards(data.hazards);
-              renderHudOverlay(data.hazards, video.videoWidth || 640, video.videoHeight || 360);
-
-              // Check for critical / high alerts
-              const crit = data.hazards.find((h: any) => h.risk_level === 'CRITICAL' || h.risk_level === 'HIGH');
-              if (crit) {
-                setCriticalAlert(`${crit.hazard_type}: ${crit.risk_level} RISK`);
-                triggerAudioAndHaptic(crit.hazard_type, crit.risk_level);
-              } else {
-                setCriticalAlert(null);
-              }
-            }
-
-            if (data.telemetry?.road_geometry) {
-              setRoadCurve(data.telemetry.road_geometry.curve_type || 'STRAIGHT');
-            }
-            if (data.fps) {
-              setFps(data.fps);
-            }
-          }
-        } catch (err) {
-          setRoundtripLatency(10);
-        } finally {
-          isProcessingRef.current = false;
-        }
+              z_accel_g: zAccelG,
+              road_geometry: { curve_type: roadCurve },
+            },
+            latest_hazards: activeHazards,
+          })
+        );
       }
-    };
+    }, 120);
 
-    // Run video capture at smooth 10 FPS (100ms)
-    intervalId = setInterval(captureAndSendFrame, 100);
-    return () => clearInterval(intervalId);
-  }, [cameraActive, gpsCoords, zAccelG, speedKmh, roadCurve]);
+    return () => clearInterval(interval);
+  }, [speedKmh, zAccelG, roadCurve, activeHazards, fps]);
 
-  // Kinetic Road Movement Triggers for Interactive Testing (Instant WebSocket Push)
-  const triggerBumpSim = async (gVal: number) => {
+  // Bump Trigger
+  const triggerBumpSim = (gVal: number = 2.4) => {
     setZAccelG(gVal);
+    setIsBumpSpike(true);
+    setCriticalAlert(`POTHOLE SHOCKWAVE DETECTED (${gVal}G)`);
+
     if ('vibrate' in navigator) {
-      navigator.vibrate([200, 80, 200]);
-    }
-    const potholeHz: HazardBox = {
-      hazard_type: 'POTHOLE',
-      bbox: [100, 120, 220, 160],
-      risk_level: 'CRITICAL',
-      confidence: 0.98,
-      distance_m: 10,
-    };
-    setActiveHazards([potholeHz]);
-    triggerAudioAndHaptic('POTHOLE', 'CRITICAL');
-
-    // Instant WebSocket push to Infotainment (<2ms)
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        speed_kmh: speedKmh,
-        z_accel_g: gVal,
-        road_curve: roadCurve
-      }));
+      navigator.vibrate([150, 50, 200]);
     }
 
-    bcRef.current?.postMessage({
-      speed_kmh: speedKmh,
-      z_accel_g: gVal,
-      road_curve: roadCurve,
-      camera_b64: null,
-      hazards: [potholeHz],
-      fps,
-    });
-
-    try {
-      await fetch('/api/smartphone/frame', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          image_base64: 'data:image/jpeg;base64,',
-          latitude: gpsCoords?.lat || 12.9716,
-          longitude: gpsCoords?.lng || 77.5946,
-          altitude: 915.2,
-          z_accel_g: gVal,
-          speed_kmh: speedKmh,
-          device_id: 'smartphone_dashcam_live',
-          corridor_id: 'blr_outer_ring_road',
-        }),
-      });
-    } catch (e) {}
-
-    setTimeout(() => {
-      setZAccelG(1.02);
-    }, 1200);
-  };
-
-  const setManualSpeed = (spd: number) => {
-    setSpeedKmh(spd);
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        speed_kmh: spd,
-        z_accel_g: zAccelG,
-        road_curve: roadCurve
-      }));
-    }
-    bcRef.current?.postMessage({
-      speed_kmh: spd,
-      z_accel_g: zAccelG,
-      road_curve: roadCurve,
-      hazards: activeHazards,
-      fps,
-    });
-  };
-
-  const setManualCurve = (curve: string) => {
-    setRoadCurve(curve);
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        speed_kmh: speedKmh,
-        z_accel_g: zAccelG,
-        road_curve: curve
-      }));
-    }
-    bcRef.current?.postMessage({
-      speed_kmh: speedKmh,
-      z_accel_g: zAccelG,
-      road_curve: curve,
-      hazards: activeHazards,
-      fps,
-    });
-  };
-
-  const triggerGenericHazard = (type: string, risk: string = 'HIGH', distance: number = 70) => {
-    const hz: HazardBox = {
-      hazard_type: type,
-      bbox: [100, 110, 220, 180],
-      risk_level: risk,
-      confidence: 0.95,
-      distance_m: distance,
-    };
-    setActiveHazards([hz]);
-    triggerAudioAndHaptic(type, risk);
-
-    const zg = type === 'POTHOLE' ? 2.35 : zAccelG;
-    const curve = type.includes('CURVE') ? 'SHARP_LEFT' : roadCurve;
-
-    // Broadcast over WebSocket to all vehicles on the road (<2ms)
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({
-          speed_kmh: speedKmh,
-          z_accel_g: zg,
-          road_curve: curve,
-          latest_hazards: [hz],
-          hazard_type: type,
-          distance_m: distance,
-        })
-      );
-    }
-
-    bcRef.current?.postMessage({
-      speed_kmh: speedKmh,
-      z_accel_g: zg,
-      road_curve: curve,
-      hazards: [hz],
-      fps,
-    });
-  };
-
-  const triggerAnimalHazard = () => {
-    triggerGenericHazard('ANIMAL_COW', 'HIGH', 65);
-  };
-
-  // 4. Render Sleek Automotive Augmented Reality HUD Overlay
-  const renderHudOverlay = (hazards: HazardBox[], vw: number, vh: number) => {
-    const hudCanvas = hudCanvasRef.current;
-    if (!hudCanvas) return;
-    const ctx = hudCanvas.getContext('2d');
-    if (!ctx) return;
-
-    hudCanvas.width = vw;
-    hudCanvas.height = vh;
-    ctx.clearRect(0, 0, vw, vh);
-
-    hazards.forEach((hz) => {
-      const [x1, y1, x2, y2] = hz.bbox;
-      const w = x2 - x1;
-      const h = y2 - y1;
-
-      // Color mapping
-      let color = '#4285F4'; // Google Blue (Pedestrian)
-      if (hz.risk_level === 'CRITICAL') color = '#EA4335'; // Google Red
-      else if (hz.risk_level === 'HIGH') color = '#FBBC05'; // Google Yellow
-      else if (hz.risk_level === 'MEDIUM') color = '#4285F4';
-      else color = '#34A853'; // Google Green
-
-      // Draw Corner Brackets
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 3;
-      const len = Math.min(16, w * 0.25);
-
-      // Top-left
-      ctx.beginPath();
-      ctx.moveTo(x1, y1 + len);
-      ctx.lineTo(x1, y1);
-      ctx.lineTo(x1 + len, y1);
-      ctx.stroke();
-
-      // Top-right
-      ctx.beginPath();
-      ctx.moveTo(x2 - len, y1);
-      ctx.lineTo(x2, y1);
-      ctx.lineTo(x2, y1 + len);
-      ctx.stroke();
-
-      // Bottom-left
-      ctx.beginPath();
-      ctx.moveTo(x1, y2 - len);
-      ctx.lineTo(x1, y2);
-      ctx.lineTo(x1 + len, y2);
-      ctx.stroke();
-
-      // Bottom-right
-      ctx.beginPath();
-      ctx.moveTo(x2 - len, y2);
-      ctx.lineTo(x2, y2);
-      ctx.lineTo(x2, y2 - len);
-      ctx.stroke();
-
-      // Tag Banner
-      ctx.fillStyle = 'rgba(9, 13, 22, 0.85)';
-      const tagText = `${hz.hazard_type} [${hz.risk_level}]`;
-      ctx.font = 'bold 12px monospace';
-      const textMetrics = ctx.measureText(tagText);
-      ctx.fillRect(x1, Math.max(0, y1 - 22), textMetrics.width + 12, 20);
-
-      ctx.fillStyle = color;
-      ctx.fillText(tagText, x1 + 6, Math.max(14, y1 - 7));
-    });
-  };
-
-  // 5. Audio & Haptic Feedback
-  const triggerAudioAndHaptic = (hazardType: string, riskLevel: string) => {
-    const now = Date.now();
-    if (now - lastAlertTimeRef.current < 4000) return; // 4s cooldown
-    lastAlertTimeRef.current = now;
-
-    // Haptic Vibration on Phone
-    if ('vibrate' in navigator) {
-      if (riskLevel === 'CRITICAL') {
-        navigator.vibrate([200, 100, 200, 100, 400]);
-      } else {
-        navigator.vibrate([150, 80, 150]);
-      }
-    }
-
-    // Voice Synthesis Alert
     if (audioEnabled && 'speechSynthesis' in window) {
       try {
-        const utterance = new SpeechSynthesisUtterance(
-          riskLevel === 'CRITICAL'
-            ? `Danger! ${hazardType} directly ahead! Slow down!`
-            : `Caution! ${hazardType} detected ahead.`
-        );
-        utterance.rate = 1.15;
-        window.speechSynthesis.speak(utterance);
-      } catch (e) {
-        // Fallback
-      }
+        const u = new SpeechSynthesisUtterance('Caution! Pothole shock detected!');
+        u.rate = 1.1;
+        window.speechSynthesis.speak(u);
+      } catch (e) {}
     }
+
+    // Reset spike after delay
+    setTimeout(() => {
+      setIsBumpSpike(false);
+      setZAccelG(1.02);
+      setCriticalAlert(null);
+    }, 2800);
   };
 
   return (
-    <div
-      className={`relative w-full ${
-        fullScreen ? 'fixed inset-0 z-50 bg-black' : 'h-[calc(100vh-140px)] min-h-[580px] bg-[#090D16]'
-      } flex flex-col font-mono text-slate-100 select-none overflow-hidden`}
-    >
-      {/* Hidden processing canvas */}
-      <canvas ref={canvasRef} className="hidden" />
-
-      {/* Top Mobile Dashcam Header Bar */}
-      <div className="absolute top-0 left-0 right-0 z-20 bg-gradient-to-b from-[#090D16]/90 via-[#090D16]/60 to-transparent p-3 sm:p-4 flex items-center justify-between pointer-events-auto">
-        <div className="flex items-center gap-2.5">
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#1E293B]/80 border border-slate-700 backdrop-blur-md">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#EA4335] animate-ping"></span>
-            <span className="text-xs font-bold text-white tracking-wider uppercase">
-              {videoSource === 'camera' ? 'Phone Rear Cam' : 'Road Driving Stream'}
-            </span>
-          </div>
-
-          <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded bg-[#090D16]/80 border border-[#1E293B] text-[11px] text-[#34A853]">
-            <Radio className="w-3.5 h-3.5 animate-pulse" />
-            <span>Sync: {roundtripLatency}ms</span>
-          </div>
+    <div className="w-full max-w-5xl mx-auto p-2 sm:p-4 font-['Plus_Jakarta_Sans',sans-serif] flex flex-col items-center select-none">
+      
+      {/* WINDSHIELD SUCTION MOUNT BRACKET FRAME (Slide 6.1 & Slide 10.1) */}
+      <div className="relative w-full max-w-3xl flex flex-col items-center">
+        
+        {/* Silver Suction Bracket Top Arm (Attached to Windshield Glass) */}
+        <div className="w-36 h-8 bg-gradient-to-b from-slate-300 via-slate-400 to-slate-500 rounded-t-2xl shadow-lg border-t border-white/40 flex items-center justify-center relative -mb-2 z-0">
+          <div className="w-14 h-2.5 bg-slate-700/80 rounded-full border border-slate-600 shadow-inner"></div>
         </div>
 
-        {/* Video Source Switcher & Quick Actions */}
-        <div className="flex items-center gap-2">
-          {/* Source switch */}
-          <div className="flex items-center bg-[#1E293B]/80 border border-slate-700 rounded-lg p-0.5 text-xs">
-            <button
-              onClick={() => setVideoSource('camera')}
-              className={`px-2 py-1 rounded font-medium transition-all ${
-                videoSource === 'camera' ? 'bg-[#4285F4] text-white' : 'text-slate-300 hover:text-white'
-              }`}
-              title="Use Phone Hardware Camera"
-            >
-              📱 Camera
-            </button>
-            <button
-              onClick={() => setVideoSource('sample_video')}
-              className={`px-2 py-1 rounded font-medium transition-all ${
-                videoSource === 'sample_video' ? 'bg-[#4285F4] text-white' : 'text-slate-300 hover:text-white'
-              }`}
-              title="Use Pre-recorded Driving Video"
-            >
-              🛣️ Driving Loop
-            </button>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className={`px-2 py-1 rounded font-medium transition-all ${
-                videoSource === 'custom_file' ? 'bg-[#4285F4] text-white' : 'text-slate-300 hover:text-white'
-              }`}
-              title="Upload Custom Dashcam File"
-            >
-              📁 File
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="video/*"
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-          </div>
+        {/* Suction Clamp Pivot Ring Behind Phone */}
+        <div className="w-48 h-5 bg-gradient-to-b from-slate-400 to-slate-600 rounded-lg shadow-md -mb-2 z-0 border border-slate-400"></div>
 
-          {videoSource === 'camera' && (
-            <button
-              onClick={toggleFacingMode}
-              className="p-2 rounded-lg bg-[#1E293B]/80 border border-slate-700 text-slate-300 hover:text-white"
-              title="Switch Rear/Front Camera"
-            >
-              <RefreshCw className="w-4 h-4" />
-            </button>
-          )}
-
-          <button
-            onClick={() => setAudioEnabled(!audioEnabled)}
-            className={`p-2 rounded-lg border ${
-              audioEnabled
-                ? 'bg-[#4285F4]/20 border-[#4285F4] text-[#4285F4]'
-                : 'bg-[#1E293B]/80 border-slate-700 text-slate-400'
-            }`}
-            title="Toggle Voice Alerts"
-          >
-            {audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-          </button>
-
-          <button
-            onClick={() => setFullScreen(!fullScreen)}
-            className="p-2 rounded-lg bg-[#1E293B]/80 border border-slate-700 text-slate-300 hover:text-white"
-            title="Fullscreen Dashcam Mode"
-          >
-            {fullScreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-          </button>
-        </div>
-      </div>
-
-      {/* Main Camera Viewport */}
-      <div className="relative flex-1 w-full h-full flex items-center justify-center bg-black overflow-hidden">
-        {/* Rear Camera Video Element */}
-        <video
-          ref={videoRef}
-          playsInline
-          muted
-          autoPlay
-          className={`w-full h-full object-cover ${nightMode ? 'brightness-75 contrast-125' : ''}`}
-        />
-
-        {/* Dynamic HUD Bounding Boxes Canvas */}
-        <canvas
-          ref={hudCanvasRef}
-          className="absolute inset-0 w-full h-full object-cover pointer-events-none z-10"
-        />
-
-        {/* Center Target & Forward Road Guidance Grid */}
-        <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-10 opacity-30">
-          <div className="w-32 h-32 border border-dashed border-[#4285F4] rounded-full flex items-center justify-center">
-            <div className="w-2 h-2 bg-[#EA4335] rounded-full"></div>
-          </div>
-        </div>
-
-        {/* Source Notice Banner */}
-        {sourceNotice && (
-          <div className="absolute top-16 left-4 right-4 z-20 bg-[#1E293B]/90 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs flex items-center justify-between backdrop-blur-md">
-            <span>{sourceNotice}</span>
-            <button
-              onClick={() => setSourceNotice(null)}
-              className="text-slate-400 hover:text-white ml-2"
-            >
+        {/* SMARTPHONE CHASSIS (HORIZONTAL WINDSHIELD CLAMP MOUNT) */}
+        <div className="relative w-full aspect-[16/9] min-h-[380px] max-h-[540px] bg-black border-[10px] sm:border-[14px] border-[#1a1f2c] rounded-[32px] sm:rounded-[40px] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.95)] overflow-hidden flex flex-col z-10 ring-1 ring-white/20">
+          
+          {/* Top Bar with Badges: THERMAL: WARM and Google Camera */}
+          <div className="absolute top-2.5 left-3 right-3 z-30 flex items-center justify-between text-xs font-mono pointer-events-none">
+            {/* Close / Nav icon */}
+            <div className="w-6 h-6 rounded-full bg-black/60 border border-white/20 flex items-center justify-center text-white text-xs">
               ✕
-            </button>
-          </div>
-        )}
+            </div>
 
-        {/* Critical Alert Flashing Banner */}
-        {criticalAlert && (
-          <div className="absolute top-28 left-4 right-4 z-30 bg-[#EA4335]/90 border-2 border-white text-white p-3 rounded-lg shadow-2xl backdrop-blur-md flex items-center justify-between animate-bounce">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="w-6 h-6 animate-pulse" />
-              <div>
-                <p className="font-extrabold text-sm tracking-wide uppercase">{criticalAlert}</p>
-                <p className="text-[11px] font-sans opacity-90">
-                  Instant observation relayed to Prototype Command Center & Nearby Vehicles
-                </p>
+            {/* Badges on Right */}
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full bg-[#f59e0b] text-black font-extrabold text-[10px] tracking-wider uppercase shadow-md">
+                THERMAL: WARM
+              </span>
+
+              <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-black/70 border border-emerald-500/50 text-[10px] font-bold text-emerald-400 backdrop-blur-md">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                <span>Google Camera</span>
               </div>
             </div>
-            <span className="text-[10px] bg-black/40 px-2 py-1 rounded font-mono">TTC &lt; 2.5s</span>
           </div>
-        )}
+
+          {/* MAIN CAMERA / ROAD VIDEO VIEWPORT */}
+          <div className="relative flex-1 w-full h-full bg-[#0d1117] overflow-hidden flex items-center justify-center">
+            <video
+              ref={videoRef}
+              playsInline
+              muted
+              autoPlay
+              loop
+              className="w-full h-full object-cover"
+            />
+            <canvas ref={canvasRef} className="hidden" />
+
+            {/* BOUNDING BOX 1: POTHOLE 92% (Yellow box matching Slide 10.1 & 6.1) */}
+            <div
+              className="absolute border-2 border-[#f59e0b] bg-[#f59e0b]/15 pointer-events-none z-20 shadow-[0_0_15px_rgba(245,158,11,0.4)]"
+              style={{
+                left: `${activeHazards[0].bbox[0]}%`,
+                top: `${activeHazards[0].bbox[1]}%`,
+                width: `${activeHazards[0].bbox[2] - activeHazards[0].bbox[0]}%`,
+                height: `${activeHazards[0].bbox[3] - activeHazards[0].bbox[1]}%`,
+              }}
+            >
+              <span className="absolute -top-5 left-0 bg-[#f59e0b] text-black font-extrabold text-[10px] px-1.5 py-0.5 rounded-sm uppercase tracking-wide font-mono shadow">
+                POTHOLE 92%
+              </span>
+            </div>
+
+            {/* BOUNDING BOX 2: PEDESTRIAN 55% / 88% (Red box matching Slide 10.1 & 6.1) */}
+            <div
+              className="absolute border-2 border-[#ef4444] bg-[#ef4444]/15 pointer-events-none z-20 shadow-[0_0_15px_rgba(239,68,68,0.5)]"
+              style={{
+                left: `${activeHazards[1].bbox[0]}%`,
+                top: `${activeHazards[1].bbox[1]}%`,
+                width: `${activeHazards[1].bbox[2] - activeHazards[1].bbox[0]}%`,
+                height: `${activeHazards[1].bbox[3] - activeHazards[1].bbox[1]}%`,
+              }}
+            >
+              <span className="absolute -top-5 left-0 bg-[#ef4444] text-white font-extrabold text-[10px] px-1.5 py-0.5 rounded-sm uppercase tracking-wide font-mono shadow">
+                PEDESTRIAN 88%
+              </span>
+            </div>
+
+            {/* Critical Alert Toast if Bump Felt */}
+            {criticalAlert && (
+              <div className="absolute top-12 left-6 right-6 z-40 bg-[#ef4444]/95 border-2 border-white text-white p-2.5 rounded-xl text-center font-bold text-xs shadow-2xl backdrop-blur-md animate-bounce">
+                💥 {criticalAlert}
+              </div>
+            )}
+          </div>
+
+          {/* BOTTOM SECTION INSIDE PHONE: OSCILLOSCOPE & G-FORCE METER (Slide 6.1 & 10.1) */}
+          <div className="relative w-full bg-[#0a0d14]/95 border-t border-white/[0.08] p-2 sm:p-3 px-3 sm:px-4 z-30 flex flex-col gap-1.5 font-mono">
+            
+            {/* Status Pills: THERMAL: WARM | WEBSOCKET: STREAMING */}
+            <div className="flex items-center justify-between text-[10px]">
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-full bg-[#f59e0b]/20 border border-[#f59e0b]/40 text-[#f59e0b] font-bold uppercase">
+                  THERMAL: WARM
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold uppercase">
+                  FLASHING
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 font-bold uppercase text-[9px]">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                <span>WEBSOCKET: STREAMING</span>
+              </div>
+            </div>
+
+            {/* ACCELEROMETER SHOCK OSCILLOSCOPE WAVEFORM */}
+            <div className="relative w-full bg-[#06080e] border border-white/10 rounded-xl p-1.5 px-2 flex flex-col justify-between overflow-hidden">
+              <div className="flex items-center justify-between text-[10px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">
+                <span>ACCELEROMETER SHOCK</span>
+                <span className="text-[9px] text-slate-500">...</span>
+              </div>
+
+              {/* Real-Time Waveform Canvas */}
+              <div className="relative w-full h-11 flex items-center">
+                <canvas
+                  ref={waveformCanvasRef}
+                  width={600}
+                  height={44}
+                  className="w-full h-full object-contain"
+                />
+
+                {/* IMU SHOCK SPIKE Pointer Tag (Matching Slide 10.1 & 6.1) */}
+                <div
+                  className={`absolute top-0 right-1/4 transition-opacity duration-300 flex flex-col items-center ${
+                    isBumpSpike ? 'opacity-100 scale-105' : 'opacity-85'
+                  }`}
+                >
+                  <span className="bg-[#f59e0b] text-black font-extrabold text-[9px] px-1.5 py-0.2 rounded-sm shadow-md font-mono">
+                    IMU SHOCK SPIKE
+                  </span>
+                  <div className="w-0.5 h-2 bg-[#f59e0b]"></div>
+                </div>
+              </div>
+
+              {/* G-FORCE Z-AXIS HORIZONTAL METER BAR (Slide 6.1) */}
+              <div className="w-full mt-1 flex items-center gap-2 text-[10px]">
+                <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px] whitespace-nowrap">
+                  G-force Z-axis
+                </span>
+
+                {/* Gradient Meter Bar */}
+                <div className="relative flex-1 h-2.5 rounded-full bg-slate-800 overflow-hidden border border-white/10">
+                  <div
+                    className="h-full bg-gradient-to-r from-blue-500 via-amber-400 to-red-500 transition-all duration-150 rounded-full"
+                    style={{
+                      width: `${Math.min(100, Math.max(10, ((zAccelG - 0.8) / 2.0) * 100))}%`,
+                    }}
+                  />
+                </div>
+
+                <span className="font-bold text-white text-[10px] min-w-[38px] text-right">
+                  {zAccelG.toFixed(2)}G
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Side Clamp Pads holding phone */}
+        <div className="absolute top-1/2 -left-2.5 -translate-y-1/2 w-3.5 h-20 bg-slate-700 rounded-r-md border border-slate-500 shadow-lg z-20"></div>
+        <div className="absolute top-1/2 -right-2.5 -translate-y-1/2 w-3.5 h-20 bg-slate-700 rounded-l-md border border-slate-500 shadow-lg z-20"></div>
       </div>
 
-      {/* Bottom Automotive HUD Telemetry Bar */}
-      <div className="absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-[#090D16] via-[#090D16]/90 to-transparent p-3 sm:p-4 pb-5 backdrop-blur-sm pointer-events-auto">
-        {/* Interactive Kinetic Road Movement Triggers */}
-        <div className="max-w-4xl mx-auto mb-2.5 flex flex-wrap items-center justify-center gap-1.5 sm:gap-2">
-          {/* Pothole Bump Spike Button */}
+      {/* INTERACTIVE CONTROLS BAR (BELOW MOUNT) */}
+      <div className="mt-4 flex flex-wrap items-center justify-center gap-2 bg-[#0d1322] border border-[#1e293b] p-2.5 px-4 rounded-2xl text-xs font-mono">
+        <button
+          onClick={() => triggerBumpSim(2.4)}
+          className="px-3 py-1.5 bg-[#EA4335] text-white hover:bg-red-600 rounded-xl font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-lg shadow-red-500/20"
+        >
+          <Zap className="w-3.5 h-3.5" />
+          <span>Trigger Bump Spike (2.4G)</span>
+        </button>
+
+        <div className="flex items-center bg-[#090D16] border border-[#1E293B] rounded-xl p-0.5">
           <button
-            onClick={() => triggerBumpSim(2.4)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#EA4335]/20 border border-[#EA4335] text-[#EA4335] hover:bg-[#EA4335]/30 rounded-lg text-xs font-bold transition-all active:scale-95 shadow-lg"
-          >
-            <Zap className="w-3.5 h-3.5" />
-            💥 Bump Shockwave (2.4G)
-          </button>
-
-          {/* Speed Selectors */}
-          <div className="flex items-center gap-1 bg-[#090D16]/90 rounded-lg p-0.5 border border-[#1E293B]">
-            <span className="text-[10px] text-slate-400 px-1.5">Speed:</span>
-            {[35, 65, 95].map((s) => (
-              <button
-                key={s}
-                onClick={() => setManualSpeed(s)}
-                className={`px-2 py-0.5 rounded text-xs font-bold transition-all ${
-                  speedKmh === s ? 'bg-[#4285F4] text-white' : 'text-slate-300 hover:text-white'
-                }`}
-              >
-                {s}k
-              </button>
-            ))}
-          </div>
-
-          {/* Steering / Curvature Selectors */}
-          <div className="flex items-center gap-1 bg-[#090D16]/90 rounded-lg p-0.5 border border-[#1E293B]">
-            <span className="text-[10px] text-slate-400 px-1.5">Steer:</span>
-            {[
-              { l: '↰ Left', c: 'SHARP_LEFT' },
-              { l: '⬆️ Ahead', c: 'STRAIGHT' },
-              { l: '↱ Right', c: 'SHARP_RIGHT' },
-            ].map((item) => (
-              <button
-                key={item.c}
-                onClick={() => setManualCurve(item.c)}
-                className={`px-2 py-0.5 rounded text-xs font-bold transition-all ${
-                  roadCurve === item.c ? 'bg-[#FBBC05] text-slate-900' : 'text-slate-300 hover:text-white'
-                }`}
-              >
-                {item.l}
-              </button>
-            ))}
-          </div>
-
-          {/* Hazard Broadcast Triggers */}
-          <button
-            onClick={() => triggerGenericHazard('PEDESTRIAN', 'HIGH', 50)}
-            className="flex items-center gap-1 px-2.5 py-1.5 bg-[#4285F4]/20 border border-[#4285F4] text-[#4285F4] hover:bg-[#4285F4]/30 rounded-lg text-xs font-bold transition-all active:scale-95"
-            title="Broadcast Pedestrian Hazard to all vehicles"
-          >
-            🚶 Pedestrian
-          </button>
-
-          <button
-            onClick={() => triggerGenericHazard('WATERLOGGING', 'MEDIUM', 90)}
-            className="flex items-center gap-1 px-2.5 py-1.5 bg-cyan-500/20 border border-cyan-500 text-cyan-400 hover:bg-cyan-500/30 rounded-lg text-xs font-bold transition-all active:scale-95"
-            title="Broadcast Flooded Road surface to all vehicles"
-          >
-            🌊 Flood
-          </button>
-
-          <button
-            onClick={() => triggerGenericHazard('ANIMAL_COW', 'HIGH', 65)}
-            className="flex items-center gap-1 px-2.5 py-1.5 bg-[#FBBC05]/20 border border-[#FBBC05] text-[#FBBC05] hover:bg-[#FBBC05]/30 rounded-lg text-xs font-bold transition-all active:scale-95"
-            title="Broadcast Stray Cattle to all vehicles"
-          >
-            🐄 Cow
-          </button>
-        </div>
-        <div className="max-w-4xl mx-auto grid grid-cols-4 gap-2 sm:gap-4 text-center">
-          {/* Speed */}
-          <div className="bg-[#090D16]/90 border border-[#1E293B] rounded-lg p-2.5">
-            <p className="text-[10px] text-slate-400 uppercase tracking-wider">Speed</p>
-            <p className="text-xl sm:text-2xl font-black text-white">
-              {speedKmh} <span className="text-xs font-normal text-slate-400">km/h</span>
-            </p>
-          </div>
-
-          {/* Z-Force Accelerometer Impact */}
-          <div
-            className={`border rounded-lg p-2.5 transition-colors ${
-              zAccelG > 1.8
-                ? 'bg-[#EA4335]/30 border-[#EA4335] text-[#EA4335]'
-                : 'bg-[#090D16]/90 border-[#1E293B] text-white'
+            onClick={() => setVideoSource('sample_video')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+              videoSource === 'sample_video' ? 'bg-[#4285F4] text-white' : 'text-slate-400 hover:text-white'
             }`}
           >
-            <p className="text-[10px] text-slate-400 uppercase tracking-wider">Z-Impact</p>
-            <p className="text-xl sm:text-2xl font-black">
-              {zAccelG} <span className="text-xs font-normal text-slate-400">G</span>
-            </p>
-          </div>
-
-          {/* Road Curvature */}
-          <div className="bg-[#090D16]/90 border border-[#1E293B] rounded-lg p-2.5">
-            <p className="text-[10px] text-slate-400 uppercase tracking-wider">Geometry</p>
-            <p className="text-sm sm:text-base font-bold text-[#FBBC05] truncate">
-              {roadCurve.replace('_', ' ')}
-            </p>
-          </div>
-
-          {/* AI Perception FPS */}
-          <div className="bg-[#090D16]/90 border border-[#1E293B] rounded-lg p-2.5">
-            <p className="text-[10px] text-slate-400 uppercase tracking-wider">Edge AI</p>
-            <p className="text-xl sm:text-2xl font-black text-[#34A853]">
-              {fps} <span className="text-xs font-normal text-slate-400">FPS</span>
-            </p>
-          </div>
+            🛣️ Road Loop
+          </button>
+          <button
+            onClick={() => setVideoSource('camera')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+              videoSource === 'camera' ? 'bg-[#4285F4] text-white' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            📱 Phone Cam
+          </button>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+              videoSource === 'custom_file' ? 'bg-[#4285F4] text-white' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            📁 File
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="video/*"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
         </div>
 
-        {/* GPS Coordinates & V2V Status */}
-        <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400 max-w-4xl mx-auto px-1">
-          <div className="flex items-center gap-1.5">
-            <Compass className="w-3.5 h-3.5 text-[#4285F4]" />
-            <span>
-              GPS: {gpsCoords ? `${gpsCoords.lat.toFixed(4)}, ${gpsCoords.lng.toFixed(4)}` : '12.9716, 77.5946'}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-[#34A853]"></span>
-            <span>V2V Broadcaster Active</span>
-          </div>
+        {/* Speed Controls */}
+        <div className="flex items-center gap-1 bg-[#090D16] border border-[#1E293B] rounded-xl p-0.5 px-1.5">
+          <span className="text-[10px] text-slate-400">Speed:</span>
+          {[45, 65, 90].map((s) => (
+            <button
+              key={s}
+              onClick={() => setSpeedKmh(s)}
+              className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                speedKmh === s ? 'bg-[#38bdf8] text-slate-900' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {s}k
+            </button>
+          ))}
         </div>
       </div>
     </div>

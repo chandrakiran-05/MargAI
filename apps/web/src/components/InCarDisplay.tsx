@@ -2,9 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Volume2,
   VolumeX,
-  Moon,
-  Sun,
-  Map,
   Compass,
   Radio,
   Smartphone,
@@ -12,6 +9,19 @@ import {
   ExternalLink,
   X,
   AlertTriangle,
+  Navigation,
+  Phone,
+  MessageSquare,
+  Music,
+  Mic,
+  Sliders,
+  Grid,
+  Wifi,
+  Battery,
+  Car,
+  RotateCcw,
+  CheckCircle2,
+  ShieldAlert,
 } from 'lucide-react';
 import { SUPPORTED_LANGUAGES, audioSynthesizer } from '@margai/localization';
 
@@ -117,78 +127,99 @@ const HAZARD_SPECS: Record<
 
 const SEVERITY_COLORS: Record<number, string> = {
   0: '#94a3b8',
-  1: '#4285F4', // Google Blue
-  2: '#FBBC05', // Google Yellow
-  3: '#EA4335', // Google Red
-};
-
-const SEVERITY_NAMES: Record<number, string> = {
-  1: 'Information',
-  2: 'Caution',
-  3: 'Urgent',
+  1: '#4285F4',
+  2: '#FBBC05',
+  3: '#EA4335',
 };
 
 export const InCarDisplay: React.FC = () => {
-  // Mode & Themes
-  const [mapMode, setMapMode] = useState<boolean>(false);
-  const [nightMode, setNightMode] = useState<boolean>(true);
-  const [currentLang, setCurrentLang] = useState<string>('en');
-  const [langMenuOpen, setLangMenuOpen] = useState<boolean>(false);
-  const [muted, setMuted] = useState<boolean>(false);
-  const [showQrModal, setShowQrModal] = useState<boolean>(false);
-
-  // Smartphone Real-Time Ingestion State
-  const [phoneConnected, setPhoneConnected] = useState<boolean>(false);
-  const [phoneFps, setPhoneFps] = useState<number>(0);
-  const [phoneCameraB64, setPhoneCameraB64] = useState<string | null>(null);
-  const [liveSyncActive, setLiveSyncActive] = useState<boolean>(true);
-
-  // Vehicle Kinematics (Driven by Smartphone Road Movements)
-  const [vehicleSpeed, setVehicleSpeed] = useState<number>(55); // km/h
+  // Vehicle Telemetry
+  const [vehicleSpeed, setVehicleSpeed] = useState<number>(90); // default to 90 km/h matching deck
+  const [roadCurveType, setRoadCurveType] = useState<string>('STRAIGHT');
   const [zAccelG, setZAccelG] = useState<number>(1.02);
   const [isBumpActive, setIsBumpActive] = useState<boolean>(false);
-  const [roadCurveType, setRoadCurveType] = useState<string>('STRAIGHT');
-  const [clockStr, setClockStr] = useState<string>('12:00');
+  const [clockStr, setClockStr] = useState<string>('12:30');
+  const [currentLang, setCurrentLang] = useState<string>('ta');
+  const [muted, setMuted] = useState<boolean>(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Dynamic Hazards Queue
+  // Prototype Visual Scenarios (Matching Slide 10 panels 2, 3, 4)
+  const [activeScenario, setActiveScenario] = useState<'urgent' | 'vernacular' | 'cleared'>('urgent');
+
+  // Phone Cam PiP & Zero-Latency Sync
+  const [phoneConnected, setPhoneConnected] = useState<boolean>(true);
+  const [phoneFps, setPhoneFps] = useState<number>(24);
+  const [phoneCameraB64, setPhoneCameraB64] = useState<string | null>(null);
+  const [showPairModal, setShowPairModal] = useState<boolean>(false);
+  const [liveSyncActive, setLiveSyncActive] = useState<boolean>(true);
+  const [showPiPCam, setShowPiPCam] = useState<boolean>(false);
+
+  // Active Hazards Queue
   const [hazards, setHazards] = useState<HazardItem[]>([
-    { id: 'h1', key: 'side', distance: 260, n: 1, alerted: false, confirmed: true },
-    { id: 'h2', key: 'walker', distance: 220, n: 1, alerted: false, confirmed: true },
-    { id: 'h3', key: 'pothole', distance: 180, n: 1, alerted: false, confirmed: true },
+    { id: 'hz_ped_1', key: 'walker', distance: 100, n: 1, alerted: true, confirmed: true },
   ]);
 
   const [noteText, setNoteText] = useState<{ text: string; until: number }>({
     text: '',
     until: 0,
   });
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Map route animation reference
-  const mapDistanceRef = useRef<number>(0);
-  const bumpsListRef = useRef<number[]>([]);
+  const lastHazardStateUpdateRef = useRef<number>(0);
   const lastLoopTimeRef = useRef<number>(performance.now());
-  const lastHazardStateUpdateRef = useRef<number>(performance.now());
-  const vehicleSpeedRef = useRef<number>(55);
+  const mapDistanceRef = useRef<number>(1420);
+  const vehicleSpeedRef = useRef<number>(vehicleSpeed);
+  const toastTimerRef = useRef<any>(null);
   const pipImgRef = useRef<HTMLImageElement | null>(null);
   const pipContainerRef = useRef<HTMLDivElement | null>(null);
-  const toastTimerRef = useRef<any>(null);
 
-  useEffect(() => {
-    vehicleSpeedRef.current = vehicleSpeed;
-  }, [vehicleSpeed]);
+  vehicleSpeedRef.current = vehicleSpeed;
 
   // Clock Update
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
-      setClockStr(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+      let hours = now.getHours();
+      const mins = now.getMinutes().toString().padStart(2, '0');
+      hours = hours % 12 || 12;
+      setClockStr(`${hours}:${mins}`);
     };
     updateTime();
-    const timer = setInterval(updateTime, 10000);
-    return () => clearInterval(timer);
+    const interval = setInterval(updateTime, 30000);
+    return () => clearInterval(interval);
   }, []);
 
-  // 1. Zero-Latency BroadcastChannel Listener for Instant Local Road Telemetry
+  // Preset Scenario Switcher (Instant visual alignment with Pitch Deck)
+  const applyScenario = (mode: 'urgent' | 'vernacular' | 'cleared') => {
+    setActiveScenario(mode);
+    if (mode === 'urgent') {
+      setVehicleSpeed(90);
+      setHazards([
+        { id: 'hz_ped_1', key: 'walker', distance: 100, n: 1, alerted: true, confirmed: true },
+      ]);
+      setNoteText({ text: '', until: 0 });
+      playChime(3);
+      speakPhrase('walker');
+    } else if (mode === 'vernacular') {
+      setVehicleSpeed(65);
+      setCurrentLang('ta');
+      setHazards([
+        { id: 'hz_ped_1', key: 'walker', distance: 75, n: 1, alerted: true, confirmed: true },
+      ]);
+      setNoteText({ text: '', until: 0 });
+      playChime(3);
+      speakPhrase('walker');
+    } else if (mode === 'cleared') {
+      setVehicleSpeed(90);
+      setHazards([]);
+      setNoteText({
+        text: 'NO HAZARDS AHEAD · Auto-Purged Passed Pothole',
+        until: Date.now() + 15000,
+      });
+      playChime(1);
+    }
+  };
+
+  // 1. BroadcastChannel: Zero-Latency In-Tab / Cross-Tab Bridge
   useEffect(() => {
     let bc: BroadcastChannel | null = null;
     try {
@@ -199,31 +230,23 @@ export const InCarDisplay: React.FC = () => {
         setPhoneConnected(true);
         if (msg.fps) setPhoneFps(msg.fps);
 
-        // A. Speed synchronization
         if (msg.speed_kmh !== undefined && msg.speed_kmh > 0) {
           setVehicleSpeed(Math.round(msg.speed_kmh));
         }
-
-        // B. Road Curvature & Tilting
         if (msg.road_curve) {
           setRoadCurveType(msg.road_curve);
         }
-
-        // C. Accelerometer Bump Shockwave Impact
         if (msg.z_accel_g !== undefined) {
           setZAccelG(msg.z_accel_g);
           if (msg.z_accel_g > 1.8 && !isBumpActive) {
             triggerBumpEvent(msg.z_accel_g);
           }
         }
-
-        // D. Picture-in-Picture Camera Frame (Direct DOM update - zero React re-render lag)
         if (msg.camera_b64) {
+          setPhoneCameraB64(msg.camera_b64);
           if (pipImgRef.current) pipImgRef.current.src = msg.camera_b64;
           if (pipContainerRef.current) pipContainerRef.current.style.display = 'block';
         }
-
-        // E. Ingest Hazards
         if (msg.hazards && msg.hazards.length > 0) {
           ingestPhoneHazards(msg.hazards);
         }
@@ -235,14 +258,11 @@ export const InCarDisplay: React.FC = () => {
     };
   }, [isBumpActive]);
 
-  // 2. Real-Time Zero-Latency WebSocket Push Hub (/api/ws/telemetry)
+  // 2. WebSocket Push Hub
   useEffect(() => {
     if (!liveSyncActive) return;
 
     let ws: WebSocket | null = null;
-    let fallbackPollInterval: any = null;
-    let isWsOpen = false;
-
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/api/ws/telemetry`;
 
@@ -251,17 +271,12 @@ export const InCarDisplay: React.FC = () => {
       if (data.fps) setPhoneFps(data.fps);
 
       if (data.telemetry) {
-        // A. Speed synchronization
         if (data.telemetry.speed_kmh !== undefined && data.telemetry.speed_kmh > 0) {
           setVehicleSpeed(Math.round(data.telemetry.speed_kmh));
         }
-
-        // B. Road Curvature & 3D Road Tilt
         if (data.telemetry.road_geometry?.curve_type) {
           setRoadCurveType(data.telemetry.road_geometry.curve_type);
         }
-
-        // C. Accelerometer Bump Shockwave Impact
         const zg = data.telemetry.z_accel_g || 1.02;
         setZAccelG(zg);
         if (zg > 1.8 && !isBumpActive) {
@@ -269,13 +284,12 @@ export const InCarDisplay: React.FC = () => {
         }
       }
 
-      // D. Picture-in-Picture Camera Frame (Direct DOM update - zero React re-render lag)
       if (data.frame_base64) {
+        setPhoneCameraB64(data.frame_base64);
         if (pipImgRef.current) pipImgRef.current.src = data.frame_base64;
         if (pipContainerRef.current) pipContainerRef.current.style.display = 'block';
       }
 
-      // E. Hazards Queue
       if (data.latest_hazards && data.latest_hazards.length > 0) {
         ingestPhoneHazards(data.latest_hazards);
       }
@@ -284,10 +298,7 @@ export const InCarDisplay: React.FC = () => {
     const connectWs = () => {
       try {
         ws = new WebSocket(wsUrl);
-        ws.onopen = () => {
-          isWsOpen = true;
-          setPhoneConnected(true);
-        };
+        ws.onopen = () => setPhoneConnected(true);
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
@@ -295,59 +306,36 @@ export const InCarDisplay: React.FC = () => {
           } catch (e) {}
         };
         ws.onclose = () => {
-          isWsOpen = false;
-          setTimeout(connectWs, 2000);
+          setTimeout(connectWs, 2500);
         };
-        ws.onerror = () => {
-          isWsOpen = false;
-        };
-      } catch (e) {
-        isWsOpen = false;
-      }
+      } catch (e) {}
     };
 
     connectWs();
-
-    // Low-frequency gentle fallback poll (every 2.5s) only if WebSocket disconnects
-    fallbackPollInterval = setInterval(async () => {
-      if (isWsOpen) return;
-      try {
-        const res = await fetch('/api/smartphone/status');
-        if (res.ok) {
-          const status = await res.json();
-          handleMessage(status);
-        }
-      } catch (e) {}
-    }, 2500);
-
     return () => {
       if (ws) ws.close();
-      if (fallbackPollInterval) clearInterval(fallbackPollInterval);
     };
   }, [liveSyncActive, isBumpActive]);
 
-  // Ingest Hazards coming from Phone Camera AI or V2V Road Broadcast
   const ingestPhoneHazards = (detectedHazards: any[]) => {
     detectedHazards.forEach((dh) => {
       let key = 'pothole';
       const ht = (dh.hazard_type || '').toUpperCase();
-      if (ht.includes('ANIMAL') || ht.includes('COW') || ht.includes('CATTLE') || ht.includes('DOG')) key = 'animal';
+      if (ht.includes('ANIMAL') || ht.includes('COW') || ht.includes('CATTLE')) key = 'animal';
       else if (ht.includes('PEDESTRIAN') || ht.includes('WALKER') || ht.includes('PERSON')) key = 'walker';
       else if (ht.includes('WATER') || ht.includes('FLOOD')) key = 'waterlogging';
-      else if (ht.includes('CURVE') || ht.includes('TURN') || ht.includes('BEND')) key = 'curve';
+      else if (ht.includes('CURVE') || ht.includes('TURN')) key = 'curve';
       else if (ht.includes('POTHOLE')) key = 'pothole';
 
-      // Check if hazard is already in active queue
       setHazards((prev) => {
         const exists = prev.find((h) => h.key === key && h.distance > 40);
         if (exists) {
           return prev.map((h) => (h.id === exists.id ? { ...h, n: h.n + 1 } : h));
         }
-        const estDist = dh.distance_m ? Math.round(dh.distance_m) : 220;
+        const estDist = dh.distance_m ? Math.round(dh.distance_m) : 100;
         const spec = HAZARD_SPECS[key] || HAZARD_SPECS.pothole;
 
-        // SHOW & TELL ALERT TO EVERY VEHICLE ON THE ROAD
-        showToast(`📡 V2V Road Alert: ${spec.n} ahead (${estDist}m) — Broadcasted to corridor!`);
+        showToast(`📡 V2V Road Alert: ${spec.n} ahead (${estDist}m)`);
         playChime(spec.lv);
         speakPhrase(key);
 
@@ -366,18 +354,14 @@ export const InCarDisplay: React.FC = () => {
     });
   };
 
-  // Bump Shockwave Trigger
   const triggerBumpEvent = (gVal: number) => {
     setIsBumpActive(true);
-    showToast(`Bump felt (${gVal.toFixed(2)}G): Pothole registered on road`);
+    showToast(`💥 Pothole Shockwave Detected: ${gVal.toFixed(2)}G`);
     setNoteText({
-      text: `Pothole shockwave logged (${gVal.toFixed(2)}G)`,
-      until: Date.now() + 3500,
+      text: `IMU Bump Spike (${gVal.toFixed(2)}G) · Pothole Logged`,
+      until: Date.now() + 4000,
     });
     playChime(2);
-
-    // Add bump marker to map
-    bumpsListRef.current.push(mapDistanceRef.current);
 
     setTimeout(() => {
       setIsBumpActive(false);
@@ -394,15 +378,15 @@ export const InCarDisplay: React.FC = () => {
     if (muted) return;
     try {
       audioSynthesizer.playRiskChime(level === 3 ? 'urgent' : level === 2 ? 'caution' : 'information');
-    } catch (e) {
-      // Audio fallback
-    }
+    } catch (e) {}
   };
 
   const speakPhrase = (key: string) => {
     if (muted) return;
-    const catalog = LOCALIZED_CATALOG[currentLang] || LOCALIZED_CATALOG.en;
-    const phrase = catalog.hazardPhrases[key as keyof typeof catalog.hazardPhrases];
+    const phrase =
+      LOCALIZED_CATALOG[currentLang]?.hazardPhrases[key as keyof typeof LOCALIZED_CATALOG.en.hazardPhrases] ||
+      LOCALIZED_CATALOG.en.hazardPhrases[key as keyof typeof LOCALIZED_CATALOG.en.hazardPhrases];
+
     if (phrase && 'speechSynthesis' in window) {
       try {
         window.speechSynthesis.cancel();
@@ -417,13 +401,13 @@ export const InCarDisplay: React.FC = () => {
             : currentLang === 'kn'
             ? 'kn-IN'
             : 'en-IN';
-        u.rate = 1.1;
-        setTimeout(() => window.speechSynthesis.speak(u), 300);
+        u.rate = 1.05;
+        setTimeout(() => window.speechSynthesis.speak(u), 150);
       } catch (e) {}
     }
   };
 
-  // 2. Real-Time Physics & Animation Loop (Distance Countdown & Map Navigation)
+  // Real-Time Distance Physics Loop
   useEffect(() => {
     let animId: number;
 
@@ -431,25 +415,19 @@ export const InCarDisplay: React.FC = () => {
       const dt = Math.min(0.1, (timestamp - lastLoopTimeRef.current) / 1000);
       lastLoopTimeRef.current = timestamp;
 
-      // Speed in m/s
       const speedMps = (vehicleSpeedRef.current * 1000) / 3600;
-
-      // Advance map odometer smoothly
       mapDistanceRef.current = (mapDistanceRef.current + speedMps * 0.8 * dt) % 5000;
 
-      // Throttle React state re-renders to every 120ms (8 FPS) instead of 60 FPS
-      if (timestamp - lastHazardStateUpdateRef.current >= 120) {
+      if (timestamp - lastHazardStateUpdateRef.current >= 150) {
         const stepDt = Math.min(0.3, (timestamp - lastHazardStateUpdateRef.current) / 1000);
         lastHazardStateUpdateRef.current = timestamp;
 
-        // Update hazards distance
         setHazards((prevHazards) => {
           const updated = prevHazards.map((h) => {
             const newDist = h.distance - speedMps * stepDt;
             let alerted = h.alerted;
 
-            // Trigger alert when hazard enters warning zone (< 200m)
-            if (!alerted && newDist <= 190 && !HAZARD_SPECS[h.key]?.quiet) {
+            if (!alerted && newDist <= 120 && !HAZARD_SPECS[h.key]?.quiet) {
               alerted = true;
               playChime(HAZARD_SPECS[h.key]?.lv || 2);
               speakPhrase(h.key);
@@ -457,15 +435,12 @@ export const InCarDisplay: React.FC = () => {
             return { ...h, distance: newDist, alerted };
           });
 
-          // Filter passed hazards
           return updated.filter((h) => {
             if (h.distance <= 0) {
-              if (!HAZARD_SPECS[h.key]?.quiet) {
-                setNoteText({
-                  text: `${HAZARD_SPECS[h.key]?.n} passed · Audit ticket queued`,
-                  until: Date.now() + 3500,
-                });
-              }
+              setNoteText({
+                text: 'NO HAZARDS AHEAD · Auto-Purged Passed Pothole',
+                until: Date.now() + 8000,
+              });
               return false;
             }
             return true;
@@ -478,660 +453,717 @@ export const InCarDisplay: React.FC = () => {
 
     animId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(animId);
-  }, [currentLang, muted]);
+  }, []);
 
-  // Active Top Priority Hazard
-  const activeHazardsList = hazards
-    .filter((h) => h.alerted && !HAZARD_SPECS[h.key]?.quiet)
-    .sort((a, b) => (HAZARD_SPECS[b.key]?.lv || 0) - (HAZARD_SPECS[a.key]?.lv || 0) || a.distance - b.distance);
-  const topHazard = activeHazardsList[0];
+  // Top Hazard Selector
+  const topHazard = hazards.slice().sort((a, b) => a.distance - b.distance)[0];
+  const isPedestrianHazard = topHazard?.key === 'walker';
+  const isClearedState = !topHazard && (noteText.until > Date.now() || activeScenario === 'cleared');
 
-  // Perspective Projection Helpers
-  const Y0 = 70;
-  const YB = 470;
-  const LW = (y: number) => 16 + 204 * ((y - Y0) / 400);
-  const X_proj = (w: number, y: number) => 400 + LW(y) * w;
+  // Perspective Road Math
+  const W = 800;
+  const H = 480;
+  const Y0 = 140; // Horizon Y
+  const YB = 440; // Bottom Y
   const geo = (d: number) => {
-    const s = 0.06 + 0.94 * (1 - Math.min(d, 300) / 300);
-    const y = Y0 + Math.pow(s, 1.6) * 400;
-    return { s, y, k: 0.22 + 0.95 * s };
+    const dC = Math.max(0, Math.min(d, 300));
+    const u = 1 - dC / 300;
+    const y = Y0 + (YB - Y0) * Math.pow(u, 1.85);
+    const k = 0.12 + 0.88 * Math.pow(u, 1.85);
+    return { y, k, u };
   };
 
-  // Add Hazard manually from dock
-  const spawnHazard = (k: string) => {
-    setHazards((prev) => {
-      const exists = prev.find((h) => h.key === k && h.distance > 60);
-      if (exists) {
-        showToast(`Merged: same ${HAZARD_SPECS[k].n.toLowerCase()}, ${exists.n + 1} reports`);
-        return prev.map((h) => (h.id === exists.id ? { ...h, n: h.n + 1 } : h));
-      }
-      return [
-        ...prev,
-        {
-          id: `manual_${Date.now()}`,
-          key: k,
-          distance: 280,
-          n: 1,
-          alerted: false,
-          confirmed: true,
-        },
-      ];
-    });
+  const X_proj = (lane: number, y: number) => {
+    const u = (y - Y0) / (YB - Y0);
+    const vpX = W * 0.5;
+    const wBase = 460;
+    const laneOffsetPx = lane * (wBase * 0.38) * u;
+    return vpX + laneOffsetPx;
   };
 
-  // Road Curve Tilt calculation
-  let roadTilt = 'none';
-  if (roadCurveType === 'SHARP_LEFT' || roadCurveType === 'HAIRPIN_BEND') roadTilt = 'rotate(-5deg)';
-  else if (roadCurveType === 'SHARP_RIGHT') roadTilt = 'rotate(5deg)';
-
-  // Road Dashed Line Flow Speed (Tied in Real Time to Phone Speed)
-  const dashFlowDuration = `${(17.5 / Math.max(vehicleSpeed / 3.6, 0.5)).toFixed(2)}s`;
+  const dashFlowDuration = `${Math.max(0.4, 28 / Math.max(15, vehicleSpeed))}s`;
 
   return (
-    <div
-      className={`w-full min-h-[calc(100vh-140px)] flex items-center justify-center p-2 sm:p-4 select-none ${
-        nightMode ? 'bg-[#000000] text-[#f1f2f4]' : 'bg-[#eceef1] text-[#14161a]'
-      }`}
-      style={{
-        fontFamily:
-          'system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Devanagari", "Noto Sans Tamil", "Noto Sans Telugu", "Noto Sans Kannada", sans-serif',
-      }}
-    >
-      {/* 16:9 In-Car Display Cockpit Shell */}
-      <div
-        className={`relative w-full max-w-[1240px] aspect-[16/9] rounded-2xl overflow-hidden p-3 sm:p-5 flex flex-col justify-between shadow-2xl border transition-all ${
-          isBumpActive ? 'translate-y-2.5 duration-75' : 'duration-300'
-        } ${nightMode ? 'bg-[#0d0e10] border-white/10' : 'bg-white border-black/10'}`}
-      >
-        {/* TOP STATUS BAR */}
-        <div className="flex items-center justify-between z-20 pb-2 border-b border-white/10 text-xs sm:text-sm font-mono">
-          <div className="text-base sm:text-lg font-bold tracking-tight text-white/90">{clockStr}</div>
+    <div className="w-full max-w-7xl mx-auto p-2 sm:p-4 font-['Plus_Jakarta_Sans',sans-serif]">
+      {/* SCENARIO DEMO TOOLBAR (Matching Deck Slides 10.2, 10.3, 10.4) */}
+      <div className="mb-3.5 flex flex-wrap items-center justify-between gap-2 bg-[#0d1322] border border-[#1e293b] p-2.5 px-3.5 rounded-2xl text-xs font-mono">
+        <div className="flex items-center gap-2">
+          <span className="text-slate-400 font-bold uppercase tracking-wider text-[11px]">
+            Pitch Deck Snapshots:
+          </span>
+          <button
+            onClick={() => applyScenario('urgent')}
+            className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all ${
+              activeScenario === 'urgent' && topHazard
+                ? 'bg-[#EA4335] text-white shadow-lg shadow-red-500/20'
+                : 'bg-[#1e293b] text-slate-300 hover:text-white'
+            }`}
+          >
+            <AlertTriangle className="w-3.5 h-3.5" />
+            <span>2. Urgent Alert (Slide 10.2)</span>
+          </button>
 
-          <div className="flex items-center gap-2">
-            <span className="font-extrabold text-base sm:text-xl tracking-tight text-white">
-              Marg<span className="text-[#4285F4]">AI</span>
-            </span>
-            <span className="text-[10px] bg-white/10 text-white/80 px-2 py-0.5 rounded-full border border-white/10">
-              In-Car Cockpit HUD
-            </span>
-          </div>
+          <button
+            onClick={() => applyScenario('vernacular')}
+            className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all ${
+              activeScenario === 'vernacular'
+                ? 'bg-[#34A853] text-white shadow-lg shadow-green-500/20'
+                : 'bg-[#1e293b] text-slate-300 hover:text-white'
+            }`}
+          >
+            <Volume2 className="w-3.5 h-3.5" />
+            <span>3. Vernacular Voice (Slide 10.3)</span>
+          </button>
 
-          <div className="flex items-center gap-2">
-            {/* Live Phone Link Badge */}
-            <button
-              onClick={() => setShowQrModal(true)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all ${
-                phoneConnected
-                  ? 'bg-[#34A853]/20 border-[#34A853] text-[#34A853]'
-                  : 'bg-[#EA4335]/20 border-[#EA4335]/60 text-[#EA4335] animate-pulse'
-              }`}
-            >
-              <Smartphone className="w-3.5 h-3.5" />
-              <span>{phoneConnected ? `Phone Live (${phoneFps} FPS)` : 'Sync Phone'}</span>
-            </button>
-
-            {/* Language Switcher */}
-            <div className="relative">
-              <button
-                onClick={() => setLangMenuOpen(!langMenuOpen)}
-                className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-xs font-sans text-white/90"
-              >
-                {LOCALIZED_CATALOG[currentLang]?.name || 'English'} ▾
-              </button>
-
-              {langMenuOpen && (
-                <div className="absolute right-0 top-8 z-50 bg-[#1a1b1f] border border-white/10 rounded-xl p-1.5 shadow-2xl backdrop-blur-md min-w-[130px]">
-                  {Object.keys(LOCALIZED_CATALOG).map((lk) => (
-                    <button
-                      key={lk}
-                      onClick={() => {
-                        setCurrentLang(lk);
-                        setLangMenuOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-sans transition-colors ${
-                        currentLang === lk ? 'bg-[#4285F4] text-white font-bold' : 'text-slate-300 hover:bg-white/10'
-                      }`}
-                    >
-                      {LOCALIZED_CATALOG[lk].name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+          <button
+            onClick={() => applyScenario('cleared')}
+            className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all ${
+              activeScenario === 'cleared'
+                ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/20'
+                : 'bg-[#1e293b] text-slate-300 hover:text-white'
+            }`}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>4. Auto-Purged & Clear (Slide 10.4)</span>
+          </button>
         </div>
 
-        {/* MAIN COCKPIT BODY */}
-        <div className="relative flex-1 grid grid-cols-12 gap-3 sm:gap-4 my-2 min-h-0 overflow-hidden">
-          {/* LEFT TELEMETRY CLUSTER */}
-          <div className="col-span-3 flex flex-col justify-between space-y-2 min-h-0">
-            {/* Speedometer (Driven in Real Time by Smartphone Speed) */}
-            <div className="p-3 sm:p-4 rounded-2xl bg-white/5 border border-white/10">
-              <div className="text-4xl sm:text-6xl font-light tracking-tighter text-white tabular-nums">
-                {vehicleSpeed}
-              </div>
-              <div className="text-[11px] sm:text-xs text-slate-400 font-mono flex items-center justify-between">
-                <span>km/h · live GPS</span>
-                {phoneConnected && <span className="text-emerald-400 font-bold">● Active</span>}
-              </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => triggerBumpEvent(2.4)}
+            className="px-2.5 py-1.5 rounded-xl bg-[#FBBC05]/20 text-[#FBBC05] hover:bg-[#FBBC05]/30 border border-[#FBBC05]/30 font-bold flex items-center gap-1 transition-all active:scale-95"
+          >
+            💥 Shock Spike (2.4G)
+          </button>
 
-              {/* Gear Indicator */}
-              <div className="mt-3 flex gap-2.5 text-xs sm:text-sm font-mono text-slate-500">
-                <span>P</span>
-                <span>R</span>
-                <span>N</span>
-                <span className="text-white font-black border-b-2 border-[#4285F4]">D</span>
-              </div>
-            </div>
+          <button
+            onClick={() => setShowPiPCam(!showPiPCam)}
+            className={`px-2.5 py-1.5 rounded-xl border font-bold flex items-center gap-1 transition-all ${
+              showPiPCam ? 'bg-[#4285F4] text-white border-[#4285F4]' : 'bg-[#1e293b] text-slate-300 border-slate-700'
+            }`}
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            <span>Cam PiP</span>
+          </button>
 
-            {/* Ahead Hazards Card */}
-            <div className="flex-1 p-3 rounded-2xl bg-white/5 border border-white/10 flex flex-col justify-between overflow-hidden">
-              <div>
-                <h4 className="text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-2">
-                  Ahead On Road
-                </h4>
-                <div className="space-y-2 text-xs sm:text-sm">
-                  {hazards.slice(0, 3).map((h) => {
-                    const s = HAZARD_SPECS[h.key] || HAZARD_SPECS.pothole;
-                    const col = SEVERITY_COLORS[s.lv] || '#94a3b8';
-                    return (
-                      <div key={h.id} className="flex items-center justify-between gap-1.5">
-                        <span className="flex items-center gap-1.5 truncate">
-                          <span>{s.ic}</span>
-                          <span className="truncate">{s.n}</span>
-                        </span>
-                        <div className="flex items-center gap-1.5 font-mono text-xs tabular-nums">
-                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: col }} />
-                          <b>{Math.round(h.distance)}m</b>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {hazards.length === 0 && (
-                    <div className="text-xs text-slate-500 font-mono py-2">No hazards ahead</div>
-                  )}
-                </div>
-              </div>
-
-              <div className="text-[10px] text-slate-400 font-mono leading-tight pt-2 border-t border-white/10">
-                {noteText.until > Date.now()
-                  ? noteText.text
-                  : `Z-Accel: ${zAccelG.toFixed(2)}G · Tilt: ${roadCurveType}`}
-              </div>
-            </div>
-          </div>
-
-          {/* CENTER VIEWPORT (3D ROAD PERSPECTIVE OR VECTOR MAP) */}
-          <div className="col-span-9 relative rounded-2xl overflow-hidden border border-white/10 bg-[#0f1012]">
-            {!mapMode ? (
-              /* 3D PERSPECTIVE ROAD VIEW */
-              <svg
-                viewBox="0 0 800 470"
-                preserveAspectRatio="xMidYMax slice"
-                className="absolute inset-0 w-full h-full"
-              >
-                <defs>
-                  <linearGradient id="rg" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0" stopColor="#383b42" />
-                    <stop offset="1" stopColor="#25272c" />
-                  </linearGradient>
-                  <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0" stopColor="#0f1012" />
-                    <stop offset="0.45" stopColor="#0f1012" stopOpacity="0.9" />
-                    <stop offset="1" stopColor="#0f1012" stopOpacity="0" />
-                  </linearGradient>
-                  <linearGradient id="zg" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0" stopColor="#EA4335" stopOpacity="0" />
-                    <stop offset="1" stopColor="#EA4335" stopOpacity="0.34" />
-                  </linearGradient>
-                </defs>
-
-                {/* Road World (Tilts dynamically with phone road movement) */}
-                <g id="world" style={{ transform: roadTilt, transformOrigin: '400px 470px', transition: 'transform 0.8s ease' }}>
-                  {/* Road Asphalt Polygon */}
-                  <polygon
-                    points={`${X_proj(-0.85, Y0)},${Y0} ${X_proj(1.5, Y0)},${Y0} ${X_proj(1.5, YB)},${YB} ${X_proj(-0.85, YB)},${YB}`}
-                    fill="url(#rg)"
-                  />
-
-                  {/* Road Boundary Lines */}
-                  <line
-                    x1={X_proj(-0.85, Y0)}
-                    y1={Y0}
-                    x2={X_proj(-0.85, YB)}
-                    y2={YB}
-                    stroke="#d7dae0"
-                    strokeOpacity="0.55"
-                    strokeWidth="2.5"
-                  />
-                  <line
-                    x1={X_proj(1.5, Y0)}
-                    y1={Y0}
-                    x2={X_proj(1.5, YB)}
-                    y2={YB}
-                    stroke="#d7dae0"
-                    strokeOpacity="0.55"
-                    strokeWidth="2.5"
-                  />
-
-                  {/* Flowing Center Dashed Line (Speed-synchronized with phone) */}
-                  <line
-                    x1={X_proj(0.5, Y0)}
-                    y1={Y0}
-                    x2={X_proj(0.5, YB)}
-                    y2={YB}
-                    stroke="#d7dae0"
-                    strokeOpacity="0.75"
-                    strokeWidth="3.5"
-                    strokeDasharray="22 18"
-                    style={{
-                      animation: `flow ${dashFlowDuration} linear infinite`,
-                    }}
-                  />
-
-                  {/* Horizon Range Markers */}
-                  {[100, 200].map((d) => {
-                    const g = geo(d);
-                    return (
-                      <g key={d}>
-                        <line
-                          x1={X_proj(-0.85, g.y)}
-                          x2={X_proj(1.5, g.y)}
-                          y1={g.y}
-                          y2={g.y}
-                          stroke="#ffffff"
-                          strokeOpacity="0.15"
-                          strokeDasharray="4 7"
-                        />
-                        <text
-                          x={X_proj(1.5, g.y) - 8}
-                          y={g.y - 6}
-                          textAnchor="end"
-                          fontSize="12"
-                          fill="#ffffff"
-                          fillOpacity="0.4"
-                        >
-                          {d} m
-                        </text>
-                      </g>
-                    );
-                  })}
-
-                  {/* Dynamic Hazards Rendered on Road */}
-                  {hazards.map((h) => {
-                    const g = geo(h.distance);
-                    const spec = HAZARD_SPECS[h.key] || HAZARD_SPECS.pothole;
-                    const col = SEVERITY_COLORS[spec.lv];
-                    const opacity = Math.min(1, h.distance / 25);
-
-                    if (h.key === 'pothole') {
-                      const x = X_proj(0, g.y);
-                      return (
-                        <g key={h.id} transform={`translate(${x},${g.y}) scale(${g.k})`} opacity={opacity}>
-                          <ellipse rx="46" ry="13" fill="#000" opacity="0.6" />
-                          <ellipse rx="54" ry="18" fill="none" stroke={col} strokeWidth="3.5" />
-                          <circle cy="-34" r="12" fill={col} />
-                          <text y="-29" textAnchor="middle" fontSize="15" fontWeight="800" fill="#111">
-                            !
-                          </text>
-                        </g>
-                      );
-                    } else if (h.key === 'animal') {
-                      const x = X_proj(0.2, g.y);
-                      return (
-                        <g key={h.id} transform={`translate(${x},${g.y}) scale(${g.k * 1.25})`} opacity={opacity}>
-                          <ellipse rx="42" ry="14" fill="#000" opacity="0.5" />
-                          <ellipse rx="48" ry="17" fill="none" stroke={col} strokeWidth="3" />
-                          <rect x="-24" y="-52" width="48" height="30" rx="8" fill="#e6e9ee" />
-                          <circle cx="-26" cy="-60" r="12" fill="#e6e9ee" />
-                          <path d="M-32 -68 Q-36 -78 -24 -74" stroke="#aeb3bc" strokeWidth="3" fill="none" />
-                          <path d="M-20 -68 Q-16 -78 -28 -74" stroke="#aeb3bc" strokeWidth="3" fill="none" />
-                          <circle cy="-82" r="12" fill={col} />
-                          <text y="-77" textAnchor="middle" fontSize="13" fontWeight="bold" fill="#111">
-                            🐄
-                          </text>
-                        </g>
-                      );
-                    } else if (h.key === 'waterlogging') {
-                      const x = X_proj(0, g.y);
-                      return (
-                        <g key={h.id} transform={`translate(${x},${g.y}) scale(${g.k})`} opacity={opacity}>
-                          <ellipse rx="95" ry="24" fill="#1e40af" opacity="0.75" />
-                          <ellipse rx="85" ry="18" fill="#38bdf8" opacity="0.45" />
-                          <ellipse rx="98" ry="26" fill="none" stroke="#60a5fa" strokeWidth="2.5" strokeDasharray="6 4" />
-                          <path d="M-40 -4 Q0 -14 40 -4" stroke="#e0f2fe" strokeWidth="2" fill="none" opacity="0.8" />
-                          <circle cy="-38" r="12" fill="#38bdf8" />
-                          <text y="-33" textAnchor="middle" fontSize="13" fontWeight="bold" fill="#0f172a">
-                            🌊
-                          </text>
-                        </g>
-                      );
-                    } else if (h.key === 'walker' || h.key === 'side') {
-                      const wSide = h.key === 'side' ? -1.3 : -1.15 + 3 * (1 - Math.min(h.distance, 300) / 300);
-                      const x = X_proj(wSide, g.y);
-                      return (
-                        <g key={h.id} transform={`translate(${x},${g.y}) scale(${g.k * 1.15})`} opacity={opacity}>
-                          <ellipse
-                            rx="34"
-                            ry="11"
-                            fill={h.key === 'side' ? 'none' : col}
-                            fillOpacity="0.2"
-                            stroke={col}
-                            strokeWidth="2"
-                          />
-                          <rect x="-12" y="-82" width="24" height="46" rx="12" fill="#e6e9ee" />
-                          <circle cy="-96" r="10.5" fill="#e6e9ee" />
-                        </g>
-                      );
-                    } else if (h.key === 'curve') {
-                      const x = X_proj(0, g.y);
-                      return (
-                        <g key={h.id} transform={`translate(${x},${g.y}) scale(${g.k})`} opacity={opacity}>
-                          <path
-                            d="M-40 -14 L-18 0 L-40 14"
-                            stroke={col}
-                            strokeWidth="5"
-                            fill="none"
-                            strokeLinecap="round"
-                          />
-                          <path
-                            d="M-12 -14 L10 0 L-12 14"
-                            stroke={col}
-                            strokeWidth="5"
-                            fill="none"
-                            strokeLinecap="round"
-                          />
-                          <path
-                            d="M16 -14 L38 0 L16 14"
-                            stroke={col}
-                            strokeWidth="5"
-                            fill="none"
-                            strokeLinecap="round"
-                          />
-                        </g>
-                      );
-                    }
-                    return null;
-                  })}
-                </g>
-
-                {/* Horizon Gradient Fade */}
-                <rect x="0" y="0" width="800" height="230" fill="url(#fade)" />
-
-                {/* Hood of Vehicle & Taillight Halo */}
-                <g transform="translate(400,470)">
-                  <ellipse cx="0" cy="-6" rx="118" ry="16" fill="#000" opacity="0.55" />
-                  <path d="M-98 -34 Q-100 -74 -78 -80 L78 -80 Q100 -74 98 -34 Z" fill="#f3f4f6" />
-                  <path
-                    d="M-70 -80 L-54 -128 Q-50 -134 -40 -134 L40 -134 Q50 -134 54 -128 L70 -80 Z"
-                    fill="#2d323b"
-                  />
-                  <rect x="-84" y="-60" width="168" height="6" rx="3" fill="#ff3b30" />
-                </g>
-              </svg>
-            ) : (
-              /* VECTOR SATELLITE MAP VIEW */
-              <svg viewBox="0 0 800 470" className="absolute inset-0 w-full h-full">
-                <rect width="800" height="470" fill="#15171b" />
-                {/* Parks & Water */}
-                <rect x="520" y="80" width="220" height="150" rx="20" fill="#13291b" />
-                <ellipse cx="300" cy="280" rx="140" ry="90" fill="#10283b" />
-                <text x="300" y="285" textAnchor="middle" fontSize="13" fill="#6c97ff" opacity="0.6">
-                  Lakeview Lake
-                </text>
-
-                {/* Route Path */}
-                <path
-                  d="M120,400 L260,340 L440,240 L600,160 L720,100"
-                  fill="none"
-                  stroke="#2f343c"
-                  strokeWidth="24"
-                  strokeLinecap="round"
-                />
-                <path
-                  d="M120,400 L260,340 L440,240 L600,160 L720,100"
-                  fill="none"
-                  stroke="#4285F4"
-                  strokeWidth="10"
-                  strokeLinecap="round"
-                />
-
-                {/* Vehicle Marker */}
-                <g transform="translate(440,240) rotate(-35)">
-                  <circle r="24" fill="#4285F4" opacity="0.25" />
-                  <path d="M0 -18 L12 12 L0 6 L-12 12 Z" fill="#4285F4" stroke="#fff" strokeWidth="2.5" />
-                </g>
-
-                {/* POI Markers */}
-                <g transform="translate(600,160)">
-                  <circle r="14" fill="#EA4335" />
-                  <text y="5" textAnchor="middle" fontSize="13">
-                    🕳️
-                  </text>
-                </g>
-              </svg>
-            )}
-
-            {/* Picture-in-Picture Live Rear Camera Feed from Smartphone (Direct DOM - Zero Lag) */}
-            <div
-              ref={pipContainerRef}
-              style={{ display: phoneCameraB64 ? 'block' : 'none' }}
-              className="absolute right-3 bottom-3 w-36 sm:w-44 aspect-video rounded-xl overflow-hidden border border-white/20 shadow-2xl z-20 bg-black"
-            >
-              <img
-                ref={pipImgRef}
-                src={phoneCameraB64 || ''}
-                alt="Phone Camera Stream"
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute top-1 left-1.5 bg-black/80 px-1.5 py-0.5 rounded text-[9px] font-mono text-emerald-400">
-                📱 Phone Cam
-              </div>
-            </div>
-
-            {/* TOP HUD ALERT BANNER */}
-            <div
-              className={`absolute left-1/2 -translate-x-1/2 top-4 z-30 transition-all duration-300 w-[78%] sm:w-[62%] rounded-full p-2.5 sm:p-3 px-4 sm:px-6 backdrop-blur-xl border flex items-center justify-between shadow-2xl ${
-                topHazard
-                  ? 'bg-[#1a1b1f]/90 border-[#EA4335]'
-                  : 'bg-[#1a1b1f]/60 border-white/10 opacity-80'
-              }`}
-            >
-              {topHazard ? (
-                <>
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="w-10 h-10 rounded-full flex items-center justify-center text-xl font-bold border-2"
-                      style={{
-                        backgroundColor: `${SEVERITY_COLORS[HAZARD_SPECS[topHazard.key].lv]}25`,
-                        borderColor: SEVERITY_COLORS[HAZARD_SPECS[topHazard.key].lv],
-                      }}
-                    >
-                      {HAZARD_SPECS[topHazard.key].ic}
-                    </div>
-                    <div>
-                      <div
-                        className="text-[11px] font-bold uppercase tracking-wider"
-                        style={{ color: SEVERITY_COLORS[HAZARD_SPECS[topHazard.key].lv] }}
-                      >
-                        {SEVERITY_NAMES[HAZARD_SPECS[topHazard.key].lv]} · Hazard Alert
-                      </div>
-                      <div className="text-sm sm:text-base font-bold text-white leading-tight">
-                        {LOCALIZED_CATALOG[currentLang]?.hazardPhrases[
-                          topHazard.key as keyof typeof LOCALIZED_CATALOG.en.hazardPhrases
-                        ] || HAZARD_SPECS[topHazard.key].n}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 font-mono">
-                    <div className="text-right">
-                      <span className="text-2xl sm:text-3xl font-light text-white tabular-nums">
-                        {Math.max(0, Math.round(topHazard.distance))}
-                      </span>
-                      <span className="text-xs text-slate-400 ml-1">m</span>
-                    </div>
-
-                    <button
-                      onClick={() => speakPhrase(topHazard.key)}
-                      className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-sm"
-                      title="Replay Voice Warning"
-                    >
-                      🔊
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <div className="w-full text-center text-xs sm:text-sm font-medium text-slate-400">
-                  {noteText.until > Date.now() ? noteText.text : 'Quiet road · Scanning forward path'}
-                </div>
-              )}
-            </div>
-
-            {/* Toast Notification */}
-            {toastMessage && (
-              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 bg-[#1a1b1f]/95 border border-white/20 px-4 py-2 rounded-full text-xs font-mono text-white shadow-2xl animate-in fade-in slide-in-from-bottom-2">
-                {toastMessage}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* BOTTOM AUTOMOTIVE DOCK CONTROLS */}
-        <div className="flex items-center justify-between gap-1.5 pt-2 border-t border-white/10 text-xs font-mono">
-          {/* Quick Hazard Spawners */}
-          <div className="flex items-center gap-1 overflow-x-auto py-1">
-            {Object.keys(HAZARD_SPECS).map((k) => (
+          {/* Language Switcher */}
+          <div className="flex items-center bg-[#090D16] border border-[#1E293B] rounded-xl p-0.5">
+            {['en', 'ta', 'te', 'hi'].map((lng) => (
               <button
-                key={k}
-                onClick={() => spawnHazard(k)}
-                className="px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-slate-300 hover:text-white flex items-center gap-1.5 transition-all"
+                key={lng}
+                onClick={() => setCurrentLang(lng)}
+                className={`px-2 py-1 rounded-lg uppercase text-[10px] font-bold ${
+                  currentLang === lng ? 'bg-[#4285F4] text-white' : 'text-slate-400 hover:text-white'
+                }`}
               >
-                <span>{HAZARD_SPECS[k].ic}</span>
-                <span className="hidden sm:inline text-[11px]">{HAZARD_SPECS[k].n}</span>
+                {lng}
               </button>
             ))}
-          </div>
-
-          {/* Core Cockpit Toggles */}
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => setLiveSyncActive(!liveSyncActive)}
-              className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all ${
-                liveSyncActive
-                  ? 'bg-[#34A853]/20 border-[#34A853] text-[#34A853]'
-                  : 'bg-white/5 border-white/10 text-slate-400'
-              }`}
-            >
-              <Radio className="w-3.5 h-3.5 animate-pulse" />
-              <span>{liveSyncActive ? 'Sync Active' : 'Offline'}</span>
-            </button>
-
-            <button
-              onClick={() => setMapMode(!mapMode)}
-              className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-slate-300 hover:text-white flex items-center gap-1.5"
-            >
-              <Map className="w-3.5 h-3.5" />
-              <span>{mapMode ? 'Road View' : 'Map View'}</span>
-            </button>
-
-            <button
-              onClick={() => setMuted(!muted)}
-              className="p-2 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-slate-300"
-              title="Mute Sound"
-            >
-              {muted ? <VolumeX className="w-4 h-4 text-[#EA4335]" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
-            </button>
-
-            <button
-              onClick={() => setNightMode(!nightMode)}
-              className="p-2 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-slate-300"
-              title="Day/Night Mode"
-            >
-              {nightMode ? <Moon className="w-4 h-4 text-cyan-400" /> : <Sun className="w-4 h-4 text-[#FBBC05]" />}
-            </button>
           </div>
         </div>
       </div>
 
-      {/* QR MODAL TO CONNECT SMARTPHONE CAMERA */}
-      {showQrModal && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[#0D1322] border border-[#1E293B] rounded-2xl max-w-md w-full p-6 relative font-mono text-slate-100 shadow-2xl">
-            <button
-              onClick={() => setShowQrModal(false)}
-              className="absolute top-4 right-4 p-1.5 rounded-lg bg-[#090D16] text-slate-400 hover:text-white border border-[#1E293B]"
-            >
-              <X className="w-4 h-4" />
-            </button>
+      {/* AUTOMOTIVE TOUCHSCREEN BEZEL (16:9 DISPLAY) */}
+      <div className="relative w-full aspect-[16/9] min-h-[440px] max-h-[640px] bg-[#0c0f17] border-[12px] sm:border-[16px] border-[#181c26] rounded-[28px] sm:rounded-[36px] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.95)] overflow-hidden flex flex-col select-none ring-1 ring-white/10">
+        
+        {/* TOP COCKPIT STATUS BAR */}
+        <div className="w-full h-8 px-4 sm:px-6 bg-[#0a0d14] border-b border-white/[0.06] flex items-center justify-between text-slate-400 text-xs font-mono z-30">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-slate-300 text-[11px]">Dspec - Send</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span className="text-[10px] text-slate-500 hidden sm:inline">MargAI Connected</span>
+          </div>
 
-            <div className="flex items-center gap-2.5 mb-4">
-              <div className="w-9 h-9 rounded-xl bg-[#EA4335]/20 border border-[#EA4335]/40 flex items-center justify-center text-[#EA4335]">
-                <Smartphone className="w-5 h-5 animate-pulse" />
-              </div>
-              <div>
-                <h3 className="font-bold text-base text-white">Drive with Your Smartphone</h3>
-                <p className="text-xs text-slate-400">Stream real road movements straight into this cockpit</p>
-              </div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 text-[11px]">
+              <Wifi className="w-3.5 h-3.5 text-slate-300" />
+              <span className="text-slate-300 font-bold">5G</span>
             </div>
-
-            <div className="bg-[#090D16] p-4 rounded-xl border border-[#1E293B] flex flex-col items-center text-center space-y-3 mb-4">
-              <p className="text-xs text-slate-300 font-sans">
-                Point your phone camera at the QR code to mount your phone as a dashcam:
-              </p>
-              <div className="p-3 bg-white rounded-xl shadow-lg">
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(
-                    typeof window !== 'undefined'
-                      ? `${window.location.origin}/?mode=smartphone`
-                      : 'https://9ffd3d1d143b50.app.lhr.life/?mode=smartphone'
-                  )}`}
-                  alt="Smartphone Dashcam QR"
-                  className="w-44 h-44"
-                />
-              </div>
-              <a
-                href={typeof window !== 'undefined' ? `${window.location.origin}/?mode=smartphone` : '/?mode=smartphone'}
-                target="_blank"
-                rel="noreferrer"
-                className="text-[12px] text-cyan-400 font-mono break-all font-bold hover:underline"
-              >
-                {typeof window !== 'undefined' ? `${window.location.origin}/?mode=smartphone` : '/?mode=smartphone'}
-              </a>
-              <p className="text-[10px] text-slate-400 font-sans max-w-xs">
-                🔒 Secure HTTPS context activates hardware camera on Safari/Chrome automatically.
-              </p>
+            <div className="flex items-center gap-1 text-[11px]">
+              <Battery className="w-3.5 h-3.5 text-slate-300" />
+              <span>98%</span>
             </div>
-
-            <div className="flex gap-2">
-              <a
-                href="/?mode=smartphone"
-                target="_blank"
-                rel="noreferrer"
-                className="flex-1 py-2.5 px-3 rounded-xl bg-[#4285F4] hover:bg-[#3367D6] text-white font-bold text-xs text-center flex items-center justify-center gap-1.5 transition-all"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>Test in New Tab</span>
-              </a>
-              <button
-                onClick={() => setShowQrModal(false)}
-                className="py-2.5 px-4 rounded-xl bg-[#1E293B] hover:bg-slate-700 text-white font-bold text-xs"
-              >
-                Done
-              </button>
+            <div className="font-bold text-white tracking-wide text-xs">
+              {clockStr}
             </div>
           </div>
         </div>
-      )}
 
-      {/* Embedded CSS Keyframes for Flow Animation */}
-      <style>{`
-        @keyframes flow {
-          to {
-            stroke-dashoffset: -40px;
-          }
-        }
-      `}</style>
+        {/* MAIN SPLIT SCREEN: LEFT 50% 3D ROAD | RIGHT 50% NAVIGATION MAP */}
+        <div className="flex-1 w-full grid grid-cols-1 md:grid-cols-2 relative overflow-hidden">
+          
+          {/* ============================================================== */}
+          {/* LEFT HALF: 3D VECTOR ROAD / PERSPECTIVE DRIVING ENVIRONMENT */}
+          {/* ============================================================== */}
+          <div className="relative h-full w-full bg-[#11141c] border-r border-white/[0.08] overflow-hidden flex flex-col justify-between">
+            
+            {/* Speed & Drive Gear Cluster */}
+            <div className="absolute top-4 left-6 z-20 flex items-center gap-3">
+              <div className="w-11 h-11 rounded-full bg-[#2563eb] text-white font-extrabold text-xl flex items-center justify-center shadow-lg shadow-blue-600/30">
+                D
+              </div>
+              <div>
+                <div className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight leading-none font-mono">
+                  {vehicleSpeed}
+                </div>
+                <div className="text-[11px] font-mono text-slate-400 uppercase tracking-widest mt-0.5">
+                  km/h
+                </div>
+              </div>
+            </div>
+
+            {/* 3D Perspective Road SVG */}
+            <div className="relative w-full h-full flex items-center justify-center">
+              <svg viewBox="0 0 800 480" className="absolute inset-0 w-full h-full">
+                <defs>
+                  {/* Road Tarmac Shading */}
+                  <linearGradient id="roadAsphalt" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#171b24" />
+                    <stop offset="60%" stopColor="#1e2330" />
+                    <stop offset="100%" stopColor="#252b3b" />
+                  </linearGradient>
+
+                  {/* Red Fan-Shaped Braking Danger Zone Cone */}
+                  <linearGradient id="brakeConeGrad" x1="0" y1="1" x2="0" y2="0">
+                    <stop offset="0%" stopColor="#ef4444" stopOpacity="0.55" />
+                    <stop offset="40%" stopColor="#dc2626" stopOpacity="0.32" />
+                    <stop offset="100%" stopColor="#ef4444" stopOpacity="0.05" />
+                  </linearGradient>
+
+                  {/* Soft Horizon Gradient Fade */}
+                  <linearGradient id="horizonFade" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#11141c" stopOpacity="1" />
+                    <stop offset="100%" stopColor="#11141c" stopOpacity="0" />
+                  </linearGradient>
+
+                  {/* Red Pedestrian Aura Glow */}
+                  <filter id="pedGlow" x="-30%" y="-30%" width="160%" height="160%">
+                    <feDropShadow dx="0" dy="0" stdDeviation="6" floodColor="#ef4444" floodOpacity="0.8" />
+                  </filter>
+                </defs>
+
+                {/* Road Base Surface */}
+                <polygon
+                  points={`${X_proj(-1.6, Y0)},${Y0} ${X_proj(1.6, Y0)},${Y0} ${X_proj(2.0, YB)},${YB} ${X_proj(-2.0, YB)},${YB}`}
+                  fill="url(#roadAsphalt)"
+                />
+
+                {/* Outer Road Edges */}
+                <line
+                  x1={X_proj(-1.4, Y0)}
+                  y1={Y0}
+                  x2={X_proj(-1.8, YB)}
+                  y2={YB}
+                  stroke="#475569"
+                  strokeWidth="2.5"
+                  strokeOpacity="0.6"
+                />
+                <line
+                  x1={X_proj(1.4, Y0)}
+                  y1={Y0}
+                  x2={X_proj(1.8, YB)}
+                  y2={YB}
+                  stroke="#475569"
+                  strokeWidth="2.5"
+                  strokeOpacity="0.6"
+                />
+
+                {/* Animated Speed-Synchronized Center Road Dividers */}
+                <line
+                  x1={X_proj(0, Y0)}
+                  y1={Y0}
+                  x2={X_proj(0, YB)}
+                  y2={YB}
+                  stroke="#ffffff"
+                  strokeWidth="4"
+                  strokeOpacity="0.75"
+                  strokeDasharray="28 22"
+                  style={{
+                    animation: `flow ${dashFlowDuration} linear infinite`,
+                  }}
+                />
+
+                {/* RED FAN-SHAPED COLLISION BRAKING DANGER ZONE CONE (Slide 10.2 & 6.2) */}
+                {topHazard && !isClearedState && (
+                  <g>
+                    <polygon
+                      points={`375,410 425,410 ${X_proj(0.9, geo(topHazard.distance).y)},${geo(topHazard.distance).y} ${X_proj(-0.9, geo(topHazard.distance).y)},${geo(topHazard.distance).y}`}
+                      fill="url(#brakeConeGrad)"
+                      stroke="#ef4444"
+                      strokeWidth="2"
+                      strokeOpacity="0.8"
+                    />
+
+                    {/* Braking Cone Scanning Pulse Arc */}
+                    <path
+                      d={`M ${X_proj(-0.7, geo(topHazard.distance * 0.7).y)} ${geo(topHazard.distance * 0.7).y} Q ${X_proj(0, geo(topHazard.distance * 0.7).y)} ${geo(topHazard.distance * 0.7).y - 8} ${X_proj(0.7, geo(topHazard.distance * 0.7).y)} ${geo(topHazard.distance * 0.7).y}`}
+                      stroke="#ef4444"
+                      strokeWidth="2.5"
+                      strokeDasharray="6 4"
+                      fill="none"
+                      opacity="0.9"
+                    />
+                  </g>
+                )}
+
+                {/* RED PEDESTRIAN AVATAR INSIDE BRAKING CONE (Slide 10.2) */}
+                {topHazard && isPedestrianHazard && !isClearedState && (
+                  <g
+                    transform={`translate(${X_proj(0.08, geo(topHazard.distance).y)}, ${geo(topHazard.distance).y}) scale(${geo(topHazard.distance).k * 1.35})`}
+                    filter="url(#pedGlow)"
+                  >
+                    {/* Pulsing Floor Warning Ring */}
+                    <ellipse rx="38" ry="12" fill="#ef4444" fillOpacity="0.3" stroke="#ef4444" strokeWidth="2.5" />
+
+                    {/* Walking Pedestrian Silhouette */}
+                    {/* Head */}
+                    <circle cx="0" cy="-64" r="8" fill="#ef4444" />
+                    {/* Torso */}
+                    <rect x="-6" y="-54" width="12" height="24" rx="4" fill="#ef4444" />
+                    {/* Left Leg */}
+                    <line x1="-3" y1="-30" x2="-10" y2="-6" stroke="#ef4444" strokeWidth="4" strokeLinecap="round" />
+                    {/* Right Leg */}
+                    <line x1="3" y1="-30" x2="10" y2="-6" stroke="#ef4444" strokeWidth="4" strokeLinecap="round" />
+                    {/* Left Arm */}
+                    <line x1="-6" y1="-48" x2="-14" y2="-28" stroke="#ef4444" strokeWidth="3" strokeLinecap="round" />
+                    {/* Right Arm */}
+                    <line x1="6" y1="-48" x2="14" y2="-32" stroke="#ef4444" strokeWidth="3" strokeLinecap="round" />
+
+                    {/* Warning Triangle Above Pedestrian */}
+                    <polygon points="0,-82 -10,-68 10,-68" fill="#ef4444" stroke="#ffffff" strokeWidth="1" />
+                    <text x="0" y="-71" textAnchor="middle" fontSize="10" fontWeight="bold" fill="#ffffff">
+                      !
+                    </text>
+                  </g>
+                )}
+
+                {/* Pothole Hazard Overlay if pothole active */}
+                {topHazard && topHazard.key === 'pothole' && !isClearedState && (
+                  <g
+                    transform={`translate(${X_proj(0, geo(topHazard.distance).y)}, ${geo(topHazard.distance).y}) scale(${geo(topHazard.distance).k * 1.2})`}
+                  >
+                    <ellipse rx="48" ry="16" fill="#000000" opacity="0.8" />
+                    <ellipse rx="56" ry="20" fill="none" stroke="#f59e0b" strokeWidth="3" />
+                    <circle cy="-34" r="14" fill="#f59e0b" />
+                    <text y="-28" textAnchor="middle" fontSize="16" fontWeight="bold" fill="#111827">
+                      !
+                    </text>
+                  </g>
+                )}
+
+                {/* Horizon Gradient Overlay */}
+                <rect x="0" y="0" width="800" height={Y0 + 20} fill="url(#horizonFade)" />
+
+                {/* MODERN SILVER VEHICLE AVATAR (REAR PERSPECTIVE) */}
+                <g transform="translate(400, 420)">
+                  {/* Ground Shadow */}
+                  <ellipse cx="0" cy="18" rx="88" ry="12" fill="#000000" opacity="0.6" />
+
+                  {/* Lower Bumper & Diffuser */}
+                  <path
+                    d="M-72 8 L-64 22 L64 22 L72 8 Z"
+                    fill="#1e2430"
+                    stroke="#334155"
+                    strokeWidth="1.5"
+                  />
+
+                  {/* Main Car Body (Sleek Metallic Silver Curved Shell) */}
+                  <path
+                    d="M-76 6 Q-78 -24 -60 -36 L60 -36 Q78 -24 76 6 Z"
+                    fill="#cbd5e1"
+                    stroke="#94a3b8"
+                    strokeWidth="1.5"
+                  />
+
+                  {/* Rear Cabin Glass / Window */}
+                  <path
+                    d="M-52 -36 L-38 -72 Q-32 -76 0 -76 Q32 -76 38 -72 L52 -36 Z"
+                    fill="#0f172a"
+                    stroke="#334155"
+                    strokeWidth="1.5"
+                  />
+
+                  {/* Glowing Red LED Taillight Bar */}
+                  <rect x="-68" y="-12" width="136" height="7" rx="3.5" fill="#ef4444" />
+                  <rect x="-70" y="-14" width="22" height="11" rx="3" fill="#dc2626" />
+                  <rect x="48" y="-14" width="22" height="11" rx="3" fill="#dc2626" />
+
+                  {/* Taillight Halo Glow */}
+                  <ellipse cx="-59" cy="-8" rx="14" ry="4" fill="#ef4444" opacity="0.4" />
+                  <ellipse cx="59" cy="-8" rx="14" ry="4" fill="#ef4444" opacity="0.4" />
+
+                  {/* MargAI Emblem / Number Plate */}
+                  <rect x="-24" y="-2" width="48" height="14" rx="2" fill="#0f172a" stroke="#cbd5e1" strokeWidth="1" />
+                  <text x="0" y="8" textAnchor="middle" fontSize="7" fontWeight="bold" fill="#38bdf8" letterSpacing="1">
+                    MARG•AI
+                  </text>
+                </g>
+              </svg>
+            </div>
+
+            {/* BOTTOM HUD BANNER ON 3D ROAD */}
+            <div className="absolute bottom-3 left-0 right-0 z-20 flex justify-center px-4 pointer-events-none">
+              {topHazard && !isClearedState ? (
+                /* URGENT HAZARD BANNER (Slide 10.2 & 6.2) */
+                <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#2b0c10]/95 border border-[#ef4444] text-[#ef4444] shadow-2xl backdrop-blur-md animate-pulse">
+                  <AlertTriangle className="w-4 h-4 text-[#ef4444]" />
+                  <span className="font-extrabold text-xs sm:text-sm tracking-wider uppercase">
+                    {isPedestrianHazard
+                      ? `▲ URGENT PEDESTRIAN RISK [${Math.max(10, Math.round(topHazard.distance))}m]`
+                      : `▲ URGENT ${topHazard.key.toUpperCase()} AHEAD [${Math.max(10, Math.round(topHazard.distance))}m]`}
+                  </span>
+                </div>
+              ) : (
+                /* NO HAZARDS AHEAD / AUTO-PURGED (Slide 10.4) */
+                <div className="flex flex-col items-center justify-center px-5 py-2 rounded-xl bg-[#092314]/95 border border-[#22c55e] text-center shadow-2xl backdrop-blur-md">
+                  <div className="font-extrabold text-sm sm:text-base text-[#22c55e] tracking-wider uppercase">
+                    NO HAZARDS AHEAD
+                  </div>
+                  <div className="text-[11px] font-mono text-emerald-300">
+                    Auto-Purged Passed Pothole
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ============================================================== */}
+          {/* RIGHT HALF: NAVIGATION MAP + TOP FLOATING ALERT CARD */}
+          {/* ============================================================== */}
+          <div className="relative h-full w-full bg-[#0d1017] overflow-hidden flex flex-col justify-between">
+            
+            {/* TOP FLOATING ALERT CARD (Slide 10.2 & 10.3) */}
+            <div className="p-3 sm:p-4 z-20">
+              {topHazard && !isClearedState ? (
+                /* RED URGENT ALERT CARD (Slide 10.2 & 6.2) */
+                <div className="w-full bg-[#300d12]/95 border border-[#ef4444] rounded-2xl p-3 sm:p-3.5 shadow-2xl backdrop-blur-xl flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-[#ef4444]/20 border border-[#ef4444] flex items-center justify-center text-[#ef4444] font-extrabold text-lg flex-shrink-0">
+                      ▲
+                    </div>
+                    <div>
+                      <div className="text-xs sm:text-sm font-extrabold text-white leading-tight">
+                        URGENT: Person Crossing Ahead. Brake gently
+                      </div>
+                      <div className="text-[11px] text-red-200/90 font-medium mt-0.5 tracking-wide">
+                        {currentLang === 'ta'
+                          ? 'முன்னே ஒருவர் சாலையைக் கடக்கிறார். கவனம்.'
+                          : 'தமிழ் | తెలుగు | हिन्दी'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right: Distance & Animated Audio Waveform Bars */}
+                  <div className="flex items-center gap-2.5 flex-shrink-0">
+                    <span className="text-xs font-mono font-bold text-white bg-black/40 px-2 py-1 rounded-lg border border-white/10">
+                      {Math.max(10, Math.round(topHazard.distance))}m
+                    </span>
+
+                    {/* Animated Audio Waveform Bars: ||||||| */}
+                    <div className="flex items-center gap-0.5 h-6 px-1">
+                      {[14, 22, 10, 24, 18, 12, 20].map((h, i) => (
+                        <span
+                          key={i}
+                          className="w-1 bg-[#ef4444] rounded-full animate-pulse"
+                          style={{
+                            height: `${h}px`,
+                            animationDelay: `${i * 0.12}s`,
+                            animationDuration: '0.6s',
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : activeScenario === 'vernacular' ? (
+                /* GREEN VERNACULAR VOICE CARD (Slide 10.3) */
+                <div className="w-full bg-[#0a2618]/95 border border-[#22c55e] rounded-2xl p-3 sm:p-3.5 shadow-2xl backdrop-blur-xl flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-[#22c55e]/20 border border-[#22c55e] flex items-center justify-center text-[#22c55e] text-lg flex-shrink-0">
+                      🔊
+                    </div>
+                    <div>
+                      <div className="text-xs sm:text-sm font-extrabold text-white leading-tight">
+                        முன்னே ஒருவர் சாலையைக் கடக்கிறார். கவனம்.
+                      </div>
+                      <div className="text-[11px] text-emerald-300 font-mono mt-0.5">
+                        MargAI Vernacular Co-Pilot Active
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-0.5 h-6 px-1">
+                    {[12, 20, 16, 24, 18, 10, 22].map((h, i) => (
+                      <span
+                        key={i}
+                        className="w-1 bg-[#22c55e] rounded-full animate-pulse"
+                        style={{
+                          height: `${h}px`,
+                          animationDelay: `${i * 0.12}s`,
+                          animationDuration: '0.6s',
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                /* PASS-BY / AUTO-PURGED CARD (Slide 10.4) */
+                <div className="w-full bg-[#091a14]/90 border border-[#22c55e]/60 rounded-2xl p-2.5 px-4 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-[#22c55e]" />
+                    <span className="text-xs text-white font-medium">
+                      Corridor Clear · Pothole Auto-Purged & Queued for BBMP Repair
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono text-emerald-400">0 Hazards Ahead</span>
+                </div>
+              )}
+            </div>
+
+            {/* Turn-by-Turn Card Below Alert */}
+            <div className="px-4 z-10 flex items-center justify-between">
+              <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-[#141924]/90 border border-white/10 text-white text-xs font-semibold backdrop-blur-md">
+                <span className="text-lg text-[#38bdf8] font-bold">↱</span>
+                <span>Upcoming Tamil Nadu</span>
+              </div>
+
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-[10px] font-mono text-emerald-300">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                <span>GPS High Acc</span>
+              </div>
+            </div>
+
+            {/* DARK VECTOR ROAD MAP (Google / Mapbox Styling) */}
+            <div className="relative flex-1 w-full h-full overflow-hidden">
+              <svg viewBox="0 0 600 360" className="absolute inset-0 w-full h-full">
+                {/* Dark Background */}
+                <rect width="600" height="360" fill="#0d111a" />
+
+                {/* Secondary Street Grid Lines */}
+                <path
+                  d="M40 0 L40 360 M120 0 L120 360 M200 0 L200 360 M320 0 L320 360 M440 0 L440 360 M520 0 L520 360"
+                  stroke="#1a2233"
+                  strokeWidth="2"
+                />
+                <path
+                  d="M0 60 L600 60 M0 140 L600 140 M0 220 L600 220 M0 300 L600 300"
+                  stroke="#1a2233"
+                  strokeWidth="2"
+                />
+
+                {/* Major Connecting Arterial Roads */}
+                <path
+                  d="M60 360 Q180 260 220 180 T420 80 L580 40"
+                  stroke="#242e42"
+                  strokeWidth="18"
+                  fill="none"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M20 180 L220 180 L360 360"
+                  stroke="#242e42"
+                  strokeWidth="14"
+                  fill="none"
+                  strokeLinecap="round"
+                />
+
+                {/* FLUORESCENT BLUE ROUTE POLYLINE (Slide 10.2 & 6.2) */}
+                <path
+                  d="M180 340 L210 240 L240 180 Q260 140 320 120 L440 90 L520 70"
+                  stroke="#0284c7"
+                  strokeWidth="10"
+                  fill="none"
+                  strokeLinecap="round"
+                  opacity="0.5"
+                />
+                <path
+                  d="M180 340 L210 240 L240 180 Q260 140 320 120 L440 90 L520 70"
+                  stroke="#38bdf8"
+                  strokeWidth="6"
+                  fill="none"
+                  strokeLinecap="round"
+                />
+
+                {/* Active Hazard Pin on Map */}
+                {topHazard && !isClearedState && (
+                  <g transform="translate(240, 180)">
+                    <circle r="16" fill="#ef4444" opacity="0.3" className="animate-ping" />
+                    <circle r="10" fill="#ef4444" stroke="#ffffff" strokeWidth="2" />
+                    <text y="4" textAnchor="middle" fontSize="9" fontWeight="bold" fill="#ffffff">
+                      !
+                    </text>
+                  </g>
+                )}
+
+                {/* Current Vehicle Position Pointer (Bright Blue Circle + Arrow) */}
+                <g transform="translate(195, 290) rotate(-15)">
+                  <circle r="18" fill="#38bdf8" opacity="0.3" className="animate-pulse" />
+                  <circle r="10" fill="#0284c7" stroke="#ffffff" strokeWidth="2" />
+                  <path d="M0 -6 L5 4 L0 2 L-5 4 Z" fill="#ffffff" />
+                </g>
+              </svg>
+
+              {/* Map Floating Pill: Upcoming Route */}
+              <div className="absolute bottom-3 left-4 bg-[#131924]/90 border border-white/10 px-3 py-1 rounded-lg text-[10px] font-mono text-slate-300">
+                Upcoming route
+              </div>
+
+              {/* PiP Camera Overlay (Toggled or Direct Feed) */}
+              {(showPiPCam || phoneCameraB64) && (
+                <div
+                  ref={pipContainerRef}
+                  className="absolute right-3 bottom-3 w-40 sm:w-48 aspect-video rounded-xl overflow-hidden border border-white/20 shadow-2xl z-20 bg-black"
+                >
+                  <img
+                    ref={pipImgRef}
+                    src={phoneCameraB64 || ''}
+                    alt="Smartphone Camera"
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute top-1 left-1.5 bg-black/80 px-1.5 py-0.5 rounded text-[9px] font-mono text-emerald-400">
+                    📱 Phone Cam
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ============================================================== */}
+        {/* BOTTOM AUTOMOTIVE DOCK: ANDROID AUTO & CARPLAY CONTROLS */}
+        {/* ============================================================== */}
+        <div className="w-full h-12 sm:h-14 bg-[#0a0d14] border-t border-white/[0.08] px-3 sm:px-6 flex items-center justify-between z-30">
+          
+          {/* Left: Car Home & App Launcher Grid */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              onClick={() => applyScenario('urgent')}
+              className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-slate-300 hover:text-white transition-all"
+              title="Car Home"
+            >
+              <Car className="w-4 sm:w-5 h-4 sm:h-5 text-[#38bdf8]" />
+            </button>
+
+            <button
+              className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-slate-300 hover:text-white transition-all"
+              title="App Launcher"
+            >
+              <Grid className="w-4 sm:w-5 h-4 sm:h-5" />
+            </button>
+          </div>
+
+          {/* Center: Android Auto / CarPlay Core Icons */}
+          <div className="flex items-center gap-3 sm:gap-6">
+            <button
+              className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-[#22c55e] transition-all"
+              title="Phone"
+            >
+              <Phone className="w-4 sm:w-5 h-4 sm:h-5" />
+            </button>
+
+            <button
+              className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-[#38bdf8] transition-all"
+              title="Messages"
+            >
+              <MessageSquare className="w-4 sm:w-5 h-4 sm:h-5" />
+            </button>
+
+            <button
+              className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-[#22c55e] transition-all"
+              title="Spotify / Music"
+            >
+              <Music className="w-4 sm:w-5 h-4 sm:h-5" />
+            </button>
+
+            <button
+              className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-[#4285F4] transition-all"
+              title="Navigation"
+            >
+              <Navigation className="w-4 sm:w-5 h-4 sm:h-5" />
+            </button>
+
+            <button
+              onClick={() => speakPhrase(topHazard ? topHazard.key : 'walker')}
+              className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-[#FBBC05] transition-all"
+              title="Google Assistant Voice"
+            >
+              <Mic className="w-4 sm:w-5 h-4 sm:h-5" />
+            </button>
+          </div>
+
+          {/* Right: Sound, Settings & Clock */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              onClick={() => setMuted(!muted)}
+              className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-slate-300 transition-all"
+              title="Volume"
+            >
+              {muted ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
+            </button>
+
+            <button
+              onClick={() => setShowPairModal(true)}
+              className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-slate-300 transition-all"
+              title="Pair Phone via QR"
+            >
+              <QrCode className="w-4 h-4 text-slate-300" />
+            </button>
+
+            <div className="text-white font-mono text-xs font-bold pl-1 hidden sm:block">
+              {clockStr}
+            </div>
+          </div>
+        </div>
+
+        {/* Toast Overlay */}
+        {toastMessage && (
+          <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-50 bg-[#161d2d]/95 border border-[#38bdf8]/40 px-4 py-2 rounded-full text-xs font-mono text-white shadow-2xl animate-in fade-in slide-in-from-bottom-2">
+            {toastMessage}
+          </div>
+        )}
+
+        {/* QR PAIRING MODAL */}
+        {showPairModal && (
+          <div className="absolute inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+            <div className="bg-[#0f1422] border border-white/10 rounded-2xl p-6 max-w-sm w-full text-center relative shadow-2xl font-mono">
+              <button
+                onClick={() => setShowPairModal(false)}
+                className="absolute top-4 right-4 text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <Smartphone className="w-10 h-10 text-[#38bdf8] mx-auto mb-3" />
+              <h3 className="text-lg font-bold text-white">Pair Smartphone Dashcam</h3>
+              <p className="text-xs text-slate-300 mt-1 mb-4 font-sans">
+                Scan with your phone to stream live road edge vision and IMU sensor data.
+              </p>
+
+              <div className="bg-white p-3 rounded-xl inline-block shadow-inner mb-4">
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(
+                    `${typeof window !== 'undefined' ? window.location.origin : ''}/?mode=smartphone`
+                  )}`}
+                  alt="QR Code"
+                  className="w-40 h-40"
+                />
+              </div>
+
+              <div className="text-[11px] text-slate-400">
+                Or visit:{' '}
+                <a
+                  href={`${typeof window !== 'undefined' ? window.location.origin : ''}/?mode=smartphone`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[#38bdf8] underline"
+                >
+                  /?mode=smartphone
+                </a>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

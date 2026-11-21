@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
-  FileCheck2,
-  AlertTriangle,
   Building2,
+  AlertTriangle,
   CheckCircle2,
   Send,
   FileText,
@@ -10,6 +9,11 @@ import {
   MapPin,
   Camera,
   Activity,
+  Layers,
+  Check,
+  ChevronRight,
+  ShieldCheck,
+  RefreshCw,
 } from 'lucide-react';
 import { CivicCase } from '@margai/contracts';
 import { apiClient } from '../services/apiClient';
@@ -20,6 +24,8 @@ export const CivicDashboard: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeFilter, setActiveFilter] = useState<string>('all');
+  const [selectedCluster, setSelectedCluster] = useState<number>(33);
+  const [ticketStatus, setTicketStatus] = useState<'Resolved' | 'In Progress'>('Resolved');
 
   useEffect(() => {
     loadCases();
@@ -72,278 +78,376 @@ export const CivicDashboard: React.FC = () => {
     }
   };
 
-  const filteredCases = cases.filter((c) => {
-    if (activeFilter === 'all') return true;
-    return c.status === activeFilter;
-  });
-
   return (
-    <div className="max-w-7xl mx-auto px-4 lg:px-8 py-5 font-['Plus_Jakarta_Sans',sans-serif]">
-      {/* Top Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 rounded-2xl bg-[#0D1322] border border-[#1E293B] mb-5">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-mono text-[#4285F4] mb-1">
-            <Building2 className="w-3.5 h-3.5" />
-            <span>MUNICIPAL DEFECT REGISTRY · BBMP / NHAI · GOVTECH</span>
-          </div>
-          <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-            Road Hazard Evidence & Maintenance Dispatch
-          </h1>
-          <p className="text-xs text-slate-400 mt-0.5">
-            IRC:SP:84-2019 road maintenance standards compliance and 48-hour rectification audit.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3 font-mono text-xs">
-          <div className="text-right hidden sm:block">
-            <div className="text-slate-400 text-[10px]">REPAIR SLA</div>
-            <div className="text-[#34A853] font-bold">48 Hours (Bituminous Seal)</div>
-          </div>
-          <button
-            onClick={loadCases}
-            className="px-3.5 py-1.5 rounded-lg bg-[#090D16] hover:bg-slate-800 text-slate-200 border border-[#1E293B] transition-all"
-          >
-            Refresh
-          </button>
-        </div>
-      </div>
-
-      {/* 4 Google-Color Key Metrics (From Buildathon Problem Statement) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5 font-mono">
-        {/* Card 1: Google Red */}
-        <div className="p-3.5 rounded-xl bg-[#EA4335]/10 border border-[#EA4335]/30 space-y-1">
-          <div className="text-[10px] uppercase font-bold text-[#EA4335]">Critical Impact</div>
-          <div className="text-xl font-bold text-white">1.77L+ Fatalities</div>
-          <div className="text-[10px] text-slate-400 font-sans">Preventable road hazards</div>
-        </div>
-
-        {/* Card 2: Google Yellow */}
-        <div className="p-3.5 rounded-xl bg-[#FBBC05]/10 border border-[#FBBC05]/30 space-y-1">
-          <div className="text-[10px] uppercase font-bold text-[#FBBC05]">Economic Drain</div>
-          <div className="text-xl font-bold text-white">₹1000s Cr Loss</div>
-          <div className="text-[10px] text-slate-400 font-sans">Commercial fleet damage</div>
-        </div>
-
-        {/* Card 3: Google Blue */}
-        <div className="p-3.5 rounded-xl bg-[#4285F4]/10 border border-[#4285F4]/30 space-y-1">
-          <div className="text-[10px] uppercase font-bold text-[#4285F4]">Roads API Sync</div>
-          <div className="text-xl font-bold text-white">road_placeId</div>
-          <div className="text-[10px] text-slate-400 font-sans">Road-locked deduplication</div>
-        </div>
-
-        {/* Card 4: Google Green */}
-        <div className="p-3.5 rounded-xl bg-[#34A853]/10 border border-[#34A853]/30 space-y-1">
-          <div className="text-[10px] uppercase font-bold text-[#34A853]">Contractor SLA</div>
-          <div className="text-xl font-bold text-white">48h SLA Audit</div>
-          <div className="text-[10px] text-slate-400 font-sans">Zero duplicate complaints</div>
-        </div>
-      </div>
-
-      {/* Main 2-Col Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Cases List */}
-        <div className="space-y-3">
-          <div className="p-3.5 rounded-2xl bg-[#0D1322] border border-[#1E293B]">
-            <div className="flex flex-wrap gap-1.5 mb-3 text-xs font-mono">
-              {['all', 'detected', 'corroborated', 'prepared', 'submitted'].map((st) => (
-                <button
-                  key={st}
-                  onClick={() => setActiveFilter(st)}
-                  className={`px-2.5 py-1 rounded-lg capitalize font-mono text-[11px] transition-all ${
-                    activeFilter === st
-                      ? 'bg-blue-600 text-white font-bold'
-                      : 'bg-[#090D16] text-slate-400 hover:text-white border border-[#1E293B]'
-                  }`}
-                >
-                  {st}
-                </button>
-              ))}
+    <div className="w-full max-w-7xl mx-auto p-2 sm:p-4 font-['Plus_Jakarta_Sans',sans-serif]">
+      
+      {/* BROWSER WINDOW FRAME (Matching Slide 6.3 & Slide 10.4: CIVIC QUEUE & REVIEW) */}
+      <div className="w-full bg-[#0d111a] border border-[#1e293b] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        
+        {/* Mock Browser Header & URL Bar */}
+        <div className="h-10 bg-[#090d16] border-b border-[#1e293b] px-4 flex items-center justify-between text-xs font-mono">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-full bg-[#ef4444]/80"></span>
+              <span className="w-3 h-3 rounded-full bg-[#f59e0b]/80"></span>
+              <span className="w-3 h-3 rounded-full bg-[#22c55e]/80"></span>
             </div>
+            <span className="ml-3 font-bold text-white text-xs">
+              CIVIC QUEUE &amp; REVIEW
+            </span>
+          </div>
 
-            <div className="space-y-2 max-h-[560px] overflow-y-auto pr-1">
-              {filteredCases.map((c) => (
-                <div
-                  key={c.id}
-                  onClick={() => setSelectedCase(c)}
-                  className={`p-3 rounded-xl border cursor-pointer transition-all ${
-                    selectedCase?.id === c.id
-                      ? 'bg-[#121B30] border-cyan-500/60'
-                      : 'bg-[#090D16] border-[#1E293B] hover:border-slate-700'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="font-bold text-white text-xs capitalize flex items-center gap-1.5">
-                      <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                      <span>{c.hazardType}</span>
-                    </span>
-                    <span
-                      className={`text-[10px] font-mono px-2 py-0.5 rounded capitalize ${
-                        c.status === 'submitted'
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                          : c.status === 'corroborated'
-                          ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
-                          : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                      }`}
-                    >
-                      {c.status}
-                    </span>
-                  </div>
+          <div className="hidden sm:flex items-center bg-[#131926] border border-[#1e293b] rounded-lg px-3 py-1 text-[11px] text-slate-300 w-72 justify-center">
+            <span>civic.dashboard.com/queue</span>
+          </div>
 
-                  <div className="text-xs text-slate-200 truncate mb-1">
-                    {c.roadName}
-                  </div>
+          <div className="flex items-center gap-2 text-slate-400">
+            <span className="text-[11px]">SLA: 48h IRC Audit</span>
+            <button
+              onClick={loadCases}
+              className="p-1 rounded hover:bg-slate-800 text-slate-300"
+              title="Refresh Queue"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
 
-                  <div className="text-[10px] text-slate-400 font-mono flex items-center justify-between pt-1.5 border-t border-white/[0.05]">
-                    <span>Severity: <strong>{c.severityScore}/10</strong></span>
-                    <span>{c.evidenceCount} passes</span>
-                  </div>
-
-                  {c.authority.complaintNumber && (
-                    <div className="mt-1.5 text-[10px] text-emerald-400 font-mono bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/20">
-                      Ref: {c.authority.complaintNumber}
-                    </div>
-                  )}
+        {/* THREE-COLUMN DASHBOARD GRID (Slide 6.3 & Slide 10.4) */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-0 border-t border-[#1e293b]">
+          
+          {/* ============================================================== */}
+          {/* LEFT COLUMN (3/12): CORRIDOR RISK MAP & AUDIT HISTORY */}
+          {/* ============================================================== */}
+          <div className="lg:col-span-3 bg-[#0a0e17] border-r border-[#1e293b] p-3.5 sm:p-4 flex flex-col justify-between space-y-4 font-mono">
+            <div>
+              {/* Header */}
+              <div className="pb-3 border-b border-white/[0.08]">
+                <div className="text-[10px] text-[#38bdf8] font-bold tracking-wider uppercase">
+                  CORRIDOR RISK MAP
                 </div>
-              ))}
+                <div className="text-sm font-bold text-white">
+                  Tracking active hazards
+                </div>
+              </div>
+
+              {/* Stat Cards */}
+              <div className="grid grid-cols-2 gap-2 my-3">
+                <div className="bg-[#121824] border border-[#1e293b] rounded-xl p-2.5">
+                  <div className="text-[9px] text-slate-400 uppercase">Active Hazards</div>
+                  <div className="text-xl font-black text-white mt-0.5">423</div>
+                </div>
+
+                <div className="bg-[#121824] border border-[#1e293b] rounded-xl p-2.5">
+                  <div className="text-[9px] text-slate-400 uppercase">Peak in 1 hour</div>
+                  <div className="text-xl font-black text-[#f59e0b] mt-0.5">48</div>
+                </div>
+              </div>
+
+              {/* Hazard Category Selector */}
+              <div className="my-2.5">
+                <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mb-1.5">
+                  HAZARDS MARKERS
+                </div>
+                <div className="px-3 py-1.5 rounded-lg bg-[#141b2a] border border-[#38bdf8]/30 text-white text-xs font-semibold flex items-center justify-between">
+                  <span>Potholes (Tamil Nadu)</span>
+                  <span className="w-2 h-2 rounded-full bg-[#f59e0b] animate-ping"></span>
+                </div>
+              </div>
+
+              {/* Checklist Toggles (Slide 10.4) */}
+              <div className="space-y-1.5 my-3 text-xs text-slate-300 font-sans">
+                <div className="flex items-center gap-2">
+                  <Check className="w-3.5 h-3.5 text-[#22c55e]" />
+                  <span>Deduplicated map</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Check className="w-3.5 h-3.5 text-[#22c55e]" />
+                  <span>Geocached markers</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Check className="w-3.5 h-3.5 text-[#22c55e]" />
+                  <span>V2V / Civic enabled</span>
+                </div>
+              </div>
+            </div>
+
+            {/* AUDIT HISTORY (Slide 10.4) */}
+            <div className="pt-3 border-t border-white/[0.08]">
+              <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mb-2">
+                AUDIT HISTORY
+              </div>
+              <div className="space-y-2 text-[11px] text-slate-400 font-mono">
+                <div className="p-2 rounded-lg bg-[#101520] border border-white/[0.04]">
+                  <div className="text-slate-200 font-bold">Old History • 10 min ago</div>
+                  <div className="text-[10px] text-slate-400">Outer Ring Rd · 33 passes merged</div>
+                </div>
+
+                <div className="p-2 rounded-lg bg-[#101520] border border-white/[0.04]">
+                  <div className="text-slate-200 font-bold">Old History • 18 min ago</div>
+                  <div className="text-[10px] text-slate-400">Hosur Rd · Case #4002 dispatched</div>
+                </div>
+
+                <div className="p-2 rounded-lg bg-[#101520] border border-white/[0.04]">
+                  <div className="text-slate-200 font-bold">Old History • 30 min ago</div>
+                  <div className="text-[10px] text-slate-400">Old Airport Rd · 12 sightings verified</div>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Case Details & Report */}
-        <div className="lg:col-span-2 space-y-4">
-          {selectedCase ? (
-            <div className="p-5 sm:p-6 rounded-2xl bg-[#0D1322] border border-[#1E293B] space-y-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#1E293B]">
+          {/* ============================================================== */}
+          {/* CENTER COLUMN (5/12): CORRIDOR RISK MAP & CLUSTERS */}
+          {/* ============================================================== */}
+          <div className="lg:col-span-5 bg-[#0b0e16] relative min-h-[380px] flex flex-col justify-between overflow-hidden border-r border-[#1e293b]">
+            
+            {/* Top Corridor Map Banner */}
+            <div className="p-3 z-10 flex items-center justify-between pointer-events-none">
+              <span className="text-xs font-mono font-bold text-slate-300 bg-black/60 px-2.5 py-1 rounded-lg border border-white/10 backdrop-blur-md">
+                Tracking Corridor: NH-44 &amp; Ring Road
+              </span>
+
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-[10px] font-mono text-emerald-300">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                <span>Active Sensing</span>
+              </div>
+            </div>
+
+            {/* Interactive Vector GIS Risk Map SVG */}
+            <div className="relative flex-1 w-full h-full">
+              <svg viewBox="0 0 600 480" className="absolute inset-0 w-full h-full">
+                {/* Dark Base */}
+                <rect width="600" height="480" fill="#0d111a" />
+
+                {/* Road Network Grid */}
+                <path
+                  d="M0 120 L600 120 M0 240 L600 240 M0 360 L600 360"
+                  stroke="#171e2c"
+                  strokeWidth="3"
+                />
+                <path
+                  d="M100 0 L100 480 M260 0 L260 480 M420 0 L420 480"
+                  stroke="#171e2c"
+                  strokeWidth="3"
+                />
+
+                {/* Diagonal Highways */}
+                <path
+                  d="M40 440 L220 280 L380 180 L560 60"
+                  stroke="#222c3f"
+                  strokeWidth="16"
+                  fill="none"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M80 60 L220 280 L480 380"
+                  stroke="#222c3f"
+                  strokeWidth="12"
+                  fill="none"
+                  strokeLinecap="round"
+                />
+
+                {/* Orange/Red Risk Polyline on Corridor */}
+                <path
+                  d="M120 370 L220 280 L380 180 L480 120"
+                  stroke="#f59e0b"
+                  strokeWidth="6"
+                  fill="none"
+                  strokeLinecap="round"
+                  opacity="0.85"
+                />
+
+                {/* CLUSTERED GOLDEN CIRCULAR HAZARD MARKERS (Slide 10.4 & 6.3) */}
+                {/* Cluster 1: 33 */}
+                <g
+                  transform="translate(220, 280)"
+                  className="cursor-pointer"
+                  onClick={() => setSelectedCluster(33)}
+                >
+                  <circle r="26" fill="#f59e0b" opacity="0.25" className="animate-ping" />
+                  <circle r="18" fill="#d97706" stroke="#ffffff" strokeWidth="2.5" />
+                  <text y="5" textAnchor="middle" fontSize="11" fontWeight="900" fill="#ffffff" fontFamily="monospace">
+                    33
+                  </text>
+                </g>
+
+                {/* Cluster 2: 12 */}
+                <g
+                  transform="translate(380, 180)"
+                  className="cursor-pointer"
+                  onClick={() => setSelectedCluster(12)}
+                >
+                  <circle r="20" fill="#f59e0b" opacity="0.25" className="animate-ping" />
+                  <circle r="15" fill="#d97706" stroke="#ffffff" strokeWidth="2" />
+                  <text y="4" textAnchor="middle" fontSize="10" fontWeight="900" fill="#ffffff" fontFamily="monospace">
+                    12
+                  </text>
+                </g>
+
+                {/* Cluster 3: 8 */}
+                <g
+                  transform="translate(160, 340)"
+                  className="cursor-pointer"
+                  onClick={() => setSelectedCluster(8)}
+                >
+                  <circle r="14" fill="#d97706" stroke="#ffffff" strokeWidth="1.5" />
+                  <text y="4" textAnchor="middle" fontSize="9" fontWeight="900" fill="#ffffff" fontFamily="monospace">
+                    8
+                  </text>
+                </g>
+
+                {/* Cluster 4: 24 */}
+                <g
+                  transform="translate(460, 130)"
+                  className="cursor-pointer"
+                  onClick={() => setSelectedCluster(24)}
+                >
+                  <circle r="16" fill="#d97706" stroke="#ffffff" strokeWidth="1.5" />
+                  <text y="4" textAnchor="middle" fontSize="9" fontWeight="900" fill="#ffffff" fontFamily="monospace">
+                    24
+                  </text>
+                </g>
+
+                {/* Cluster 5: 15 */}
+                <g
+                  transform="translate(300, 240)"
+                  className="cursor-pointer"
+                  onClick={() => setSelectedCluster(15)}
+                >
+                  <circle r="15" fill="#d97706" stroke="#ffffff" strokeWidth="1.5" />
+                  <text y="4" textAnchor="middle" fontSize="9" fontWeight="900" fill="#ffffff" fontFamily="monospace">
+                    15
+                  </text>
+                </g>
+              </svg>
+
+              {/* Map Floating Indicator */}
+              <div className="absolute bottom-3 left-3 bg-[#0d1322]/90 border border-white/10 px-3 py-1 rounded-lg text-[10px] font-mono text-slate-300">
+                Selected Cluster: <strong>{selectedCluster} potholes</strong> on Outer Ring Corridor
+              </div>
+            </div>
+          </div>
+
+          {/* ============================================================== */}
+          {/* RIGHT COLUMN (4/12): DEDUPLICATED SIGHTINGS & REPAIR TICKET */}
+          {/* ============================================================== */}
+          <div className="lg:col-span-4 bg-[#0a0e17] p-3.5 sm:p-4 space-y-3.5 font-mono">
+            
+            {/* Deduplicated Sightings Table (Slide 6.3) */}
+            <div className="bg-[#101522] border border-[#1e293b] rounded-xl p-3">
+              <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2 flex items-center justify-between">
+                <span>Deduplicated Sightings</span>
+                <span className="text-[9px] text-[#38bdf8]">Road-Locked</span>
+              </div>
+
+              <div className="space-y-1.5 text-xs">
+                <div className="flex items-center justify-between p-2 rounded-lg bg-[#141b2a] border border-white/[0.04]">
+                  <div>
+                    <div className="font-bold text-white text-[11px]">Pothole Counts</div>
+                    <div className="text-[10px] text-slate-400">33 potholes corridor</div>
+                  </div>
+                  <span className="text-sm font-extrabold text-[#38bdf8]">100</span>
+                </div>
+
+                <div className="flex items-center justify-between p-2 rounded-lg bg-[#141b2a] border border-white/[0.04]">
+                  <div>
+                    <div className="font-bold text-white text-[11px]">Pothole Counts</div>
+                    <div className="text-[10px] text-slate-400">22 potholes corridor</div>
+                  </div>
+                  <span className="text-sm font-extrabold text-[#38bdf8]">15</span>
+                </div>
+
+                <div className="flex items-center justify-between p-2 rounded-lg bg-[#141b2a] border border-white/[0.04]">
+                  <div>
+                    <div className="font-bold text-white text-[11px]">Pothole Counts</div>
+                    <div className="text-[10px] text-slate-400">12 potholes corridor</div>
+                  </div>
+                  <span className="text-sm font-extrabold text-[#38bdf8]">5</span>
+                </div>
+              </div>
+            </div>
+
+            {/* VERIFIED MUNICIPAL REPAIR TICKET #4002 / #2048 (Slide 6.3 & 10.4) */}
+            <div className="bg-[#101522] border border-[#1e293b] rounded-xl p-3 space-y-2.5">
+              <div className="flex items-center justify-between">
                 <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono text-cyan-400 font-bold uppercase">
-                      Case #{selectedCase.id}
-                    </span>
-                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-[#090D16] text-slate-300 border border-[#1E293B]">
-                      {selectedCase.jurisdiction}
-                    </span>
+                  <div className="text-[10px] text-[#22c55e] font-bold uppercase tracking-wider">
+                    VERIFIED MUNICIPAL REPAIR TICKET #4002
                   </div>
-                  <h2 className="text-lg sm:text-xl font-bold text-white mt-1">
-                    {selectedCase.roadName}
-                  </h2>
-                </div>
-
-                <div className="flex items-center gap-2 font-mono text-xs">
-                  {selectedCase.status !== 'submitted' ? (
-                    <>
-                      <button
-                        onClick={handleGenerateReport}
-                        disabled={isGenerating}
-                        className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-purple-600/30 hover:bg-purple-600/40 text-purple-200 border border-purple-500/40 transition-all disabled:opacity-50"
-                      >
-                        <FileText className="w-3.5 h-3.5" />
-                        <span>{isGenerating ? 'Drafting...' : 'Draft Notice (IRC)'}</span>
-                      </button>
-
-                      <button
-                        onClick={handleDispatchAuthority}
-                        disabled={isSubmitting}
-                        className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/40 text-emerald-200 border border-emerald-500/40 transition-all disabled:opacity-50"
-                      >
-                        <Send className="w-3.5 h-3.5" />
-                        <span>{isSubmitting ? 'Dispatching...' : 'Dispatch to BBMP'}</span>
-                      </button>
-                    </>
-                  ) : (
-                    <div className="flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-950/60 border border-emerald-500/40 px-3 py-1 rounded-lg">
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>Acknowledged: {selectedCase.authority.complaintNumber}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Photos & Telemetry */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="rounded-xl overflow-hidden border border-[#1E293B] bg-black">
-                  <div className="p-2 bg-[#090D16] border-b border-[#1E293B] text-xs font-mono text-slate-300 flex items-center justify-between">
-                    <span>Optical Frame</span>
-                    <span className="text-[10px] text-slate-400">CameraX + LiteRT</span>
-                  </div>
-                  <img
-                    src={selectedCase.evidenceUrls[0]}
-                    alt="Defect"
-                    className="w-full h-44 object-cover"
-                  />
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-[#090D16] border border-[#1E293B] text-xs space-y-2 font-mono">
-                  <div className="text-slate-400 uppercase text-[10px] pb-1 border-b border-white/[0.06]">
-                    Defect Audit Telemetry
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Coordinates:</span>
-                    <span className="text-white">
-                      {selectedCase.location.latitude.toFixed(6)}, {selectedCase.location.longitude.toFixed(6)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">GPS Accuracy:</span>
-                    <span className="text-emerald-400">±{selectedCase.location.horizontalAccuracyM || 1.5}m</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Independent Passes:</span>
-                    <span className="text-blue-400">{selectedCase.evidenceCount} vehicles</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Accelerometer Peak:</span>
-                    <span className="text-amber-400">2.1G</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Depth Class:</span>
-                    <span className="text-rose-400">7.5 cm (D40)</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Authority:</span>
-                    <span className="text-slate-200">{selectedCase.authority.name}</span>
+                  <div className="text-[10px] text-slate-400">
+                    Proof status: Before/After
                   </div>
                 </div>
-              </div>
-
-              {/* Statutory Notice */}
-              {selectedCase.formalComplaintMarkdown ? (
-                <div className="p-4 rounded-xl bg-[#090D16] border border-purple-500/30 space-y-2">
-                  <div className="flex items-center justify-between text-xs text-purple-400 pb-1.5 border-b border-[#1E293B]">
-                    <span className="font-bold font-mono">Statutory Notice (IRC:SP:84-2019 Format)</span>
-                    <span className="font-mono text-[10px] text-slate-400">Standard SLA: 48h</span>
-                  </div>
-
-                  <div className="prose prose-invert prose-sm max-w-none text-xs text-slate-300 font-sans leading-relaxed whitespace-pre-line max-h-80 overflow-y-auto pr-2">
-                    {selectedCase.formalComplaintMarkdown}
-                  </div>
-                </div>
-              ) : (
-                <div className="p-6 rounded-xl bg-[#090D16] border border-dashed border-[#1E293B] text-center text-xs text-slate-400 font-mono">
-                  Click "Draft Notice (IRC)" to generate a formal statutory road notice formatted for municipal engineers.
-                </div>
-              )}
-
-              {/* Audit Trail */}
-              <div className="pt-3 border-t border-[#1E293B]">
-                <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
-                  Audit Log
+                <span className="text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded">
+                  IRC Passed
                 </span>
-                <div className="space-y-1 text-[11px] font-mono text-slate-400">
-                  {selectedCase.auditTrail.map((at, idx) => (
-                    <div key={idx} className="flex items-start gap-2">
-                      <span className="text-slate-600">[{new Date(at.timestamp).toLocaleTimeString()}]</span>
-                      <span className="text-blue-400">{at.action}:</span>
-                      <span className="text-slate-300">{at.notes || at.actor}</span>
-                    </div>
-                  ))}
+              </div>
+
+              {/* BEFORE & AFTER PHOTO COMPARISON (Slide 6.3 & Slide 10.4) */}
+              <div className="grid grid-cols-2 gap-2 items-center bg-[#070a10] p-2 rounded-lg border border-white/[0.06]">
+                {/* Before Photo */}
+                <div className="relative aspect-video rounded-lg overflow-hidden border border-red-500/30">
+                  <img
+                    src="https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?w=400&q=80"
+                    alt="Pothole Before Repair"
+                    className="w-full h-full object-cover"
+                  />
+                  <span className="absolute bottom-1 left-1 bg-black/80 px-1 py-0.2 rounded text-[8px] text-red-400 font-bold uppercase">
+                    Before
+                  </span>
+                </div>
+
+                {/* After Photo (Cleanly Repaired Asphalt) */}
+                <div className="relative aspect-video rounded-lg overflow-hidden border border-emerald-500/30">
+                  <img
+                    src="https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=400&q=80"
+                    alt="Asphalt Road After Repair"
+                    className="w-full h-full object-cover"
+                  />
+                  <span className="absolute bottom-1 left-1 bg-black/80 px-1 py-0.2 rounded text-[8px] text-emerald-400 font-bold uppercase">
+                    After
+                  </span>
                 </div>
               </div>
+
+              <div className="text-[10px] text-slate-400 text-center font-mono">
+                12 sightings merging to Case #4002
+              </div>
+
+              {/* Action Buttons: Resolved (Green) | Status (Amber) */}
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  onClick={() => setTicketStatus('Resolved')}
+                  className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 ${
+                    ticketStatus === 'Resolved'
+                      ? 'bg-[#22c55e] text-black shadow-lg shadow-green-500/20'
+                      : 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/30'
+                  }`}
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Resolved</span>
+                </button>
+
+                <button
+                  onClick={() => handleGenerateReport()}
+                  className="py-2 rounded-xl bg-[#f59e0b]/20 hover:bg-[#f59e0b]/30 text-[#f59e0b] border border-[#f59e0b]/40 text-xs font-bold transition-all flex items-center justify-center gap-1"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Status</span>
+                </button>
+              </div>
+
+              {/* Dispatch Action */}
+              <button
+                onClick={handleDispatchAuthority}
+                disabled={isSubmitting}
+                className="w-full py-2 rounded-xl bg-[#4285F4] hover:bg-blue-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>{isSubmitting ? 'Dispatching...' : 'Dispatch to BBMP / NHAI'}</span>
+              </button>
             </div>
-          ) : (
-            <div className="p-10 rounded-2xl bg-[#0D1322] border border-[#1E293B] text-center text-slate-400 text-xs font-mono">
-              Select a case to inspect evidence and review reports.
-            </div>
-          )}
+          </div>
         </div>
       </div>
     </div>
