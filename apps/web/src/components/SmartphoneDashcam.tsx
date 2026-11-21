@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Camera,
   Smartphone,
@@ -19,8 +19,20 @@ import {
   X,
   Link,
   Check,
+  Cpu,
+  Loader2,
 } from 'lucide-react';
 import Peer from 'peerjs';
+import {
+  loadDetectionModel,
+  getModelStatus,
+  detectHazards,
+  startGeoTracking,
+  stopGeoTracking,
+  getCurrentPosition,
+  type DetectedHazard,
+  type DetectionResult,
+} from '../services/hazardDetector';
 
 interface HazardBox {
   hazard_type: string;
@@ -29,6 +41,8 @@ interface HazardBox {
   confidence: number;
   distance_m?: number;
   ttc_sec?: number;
+  label?: string;
+  geo?: { lat: number; lng: number; accuracy: number };
 }
 
 export const SmartphoneDashcam: React.FC = () => {
@@ -38,6 +52,12 @@ export const SmartphoneDashcam: React.FC = () => {
   const [sourceNotice, setSourceNotice] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
   const [audioEnabled, setAudioEnabled] = useState<boolean>(true);
+
+  // ML Model State
+  const [mlModelLoaded, setMlModelLoaded] = useState<boolean>(false);
+  const [mlModelLoading, setMlModelLoading] = useState<boolean>(false);
+  const [mlInferenceMs, setMlInferenceMs] = useState<number>(0);
+  const [mlDetectionActive, setMlDetectionActive] = useState<boolean>(false);
 
   // WebRTC Pairing to Infotainment
   const [pairTarget, setPairTarget] = useState<string>(() => {
@@ -58,34 +78,22 @@ export const SmartphoneDashcam: React.FC = () => {
   const [fps, setFps] = useState<number>(24);
   const [isBumpSpike, setIsBumpSpike] = useState<boolean>(false);
 
-  // Hazards Display (Matching Slide 6.1 and 10.1: POTHOLE 92% and PEDESTRIAN 88%)
-  const [activeHazards, setActiveHazards] = useState<HazardBox[]>([
-    {
-      hazard_type: 'POTHOLE',
-      bbox: [22, 58, 48, 80],
-      risk_level: 'HIGH',
-      confidence: 0.92,
-      distance_m: 25,
-    },
-    {
-      hazard_type: 'PEDESTRIAN',
-      bbox: [68, 28, 84, 82],
-      risk_level: 'CRITICAL',
-      confidence: 0.88,
-      distance_m: 60,
-    },
-  ]);
+  // Hazards Display — now populated by real ML detections
+  const [activeHazards, setActiveHazards] = useState<HazardBox[]>([]);
   const [roadCurve, setRoadCurve] = useState<string>('STRAIGHT');
   const [criticalAlert, setCriticalAlert] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const analysisCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const waveformCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const bcRef = useRef<BroadcastChannel | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const waveformHistoryRef = useRef<number[]>(Array(50).fill(0));
+  const detectionLoopRef = useRef<number | null>(null);
+  const lastAlertRef = useRef<string>('');
 
   // Initialize BroadcastChannel & WebSocket
   useEffect(() => {
@@ -114,6 +122,132 @@ export const SmartphoneDashcam: React.FC = () => {
       if (ws) ws.close();
     };
   }, []);
+
+  // ── Load ML Model & Start GPS Tracking ──
+  useEffect(() => {
+    startGeoTracking();
+
+    const loadModel = async () => {
+      setMlModelLoading(true);
+      const success = await loadDetectionModel();
+      setMlModelLoaded(success);
+      setMlModelLoading(false);
+      if (success) {
+        setSourceNotice('🧠 AI Model Loaded — Real-time hazard detection active');
+      }
+    };
+
+    loadModel();
+
+    return () => {
+      stopGeoTracking();
+      if (detectionLoopRef.current) {
+        cancelAnimationFrame(detectionLoopRef.current);
+      }
+    };
+  }, []);
+
+  // ── ML Detection Loop — runs on camera frames ──
+  useEffect(() => {
+    if (!mlModelLoaded || !cameraActive) return;
+
+    if (!analysisCanvasRef.current) {
+      const c = document.createElement('canvas');
+      c.width = 160;
+      c.height = 120;
+      (analysisCanvasRef as any).current = c;
+    }
+
+    setMlDetectionActive(true);
+    let running = true;
+    let lastDetectionTime = 0;
+    const DETECTION_INTERVAL_MS = 200; // Run detection ~5 times/sec
+
+    const runDetection = async () => {
+      if (!running || !videoRef.current || videoRef.current.readyState < 2) {
+        if (running) detectionLoopRef.current = requestAnimationFrame(runDetection);
+        return;
+      }
+
+      const now = performance.now();
+      if (now - lastDetectionTime < DETECTION_INTERVAL_MS) {
+        if (running) detectionLoopRef.current = requestAnimationFrame(runDetection);
+        return;
+      }
+      lastDetectionTime = now;
+
+      try {
+        const result: DetectionResult = await detectHazards(
+          videoRef.current,
+          analysisCanvasRef.current!,
+        );
+
+        setMlInferenceMs(result.inferenceMs);
+
+        // Update GPS display
+        const pos = getCurrentPosition();
+        if (pos) {
+          setGpsCoords({ lat: pos.lat, lng: pos.lng });
+        }
+
+        // Convert DetectedHazard[] → HazardBox[] for display
+        const newHazards: HazardBox[] = result.hazards.map((h) => ({
+          hazard_type: h.hazard_type,
+          bbox: h.bbox,
+          risk_level: h.risk_level,
+          confidence: h.confidence,
+          distance_m: h.distance_m,
+          label: h.label,
+          geo: h.geo,
+        }));
+
+        setActiveHazards(newHazards);
+        setFps(result.fps > 0 ? Math.min(result.fps, 30) : fps);
+
+        // Trigger critical alert for close hazards
+        const critical = result.hazards.find(
+          (h) => h.risk_level === 'CRITICAL' && h.distance_m < 40,
+        );
+        if (critical) {
+          const alertKey = `${critical.hazard_type}_${Math.round(critical.distance_m)}`;
+          if (alertKey !== lastAlertRef.current) {
+            lastAlertRef.current = alertKey;
+            setCriticalAlert(
+              `⚠️ ${critical.label} DETECTED — ${critical.distance_m}m ahead (${Math.round(critical.confidence * 100)}%)`,
+            );
+            // Play alert sound
+            if (audioEnabled && 'speechSynthesis' in window) {
+              try {
+                const u = new SpeechSynthesisUtterance(
+                  `Caution! ${critical.label} detected ${critical.distance_m} meters ahead.`,
+                );
+                u.rate = 1.1;
+                window.speechSynthesis.speak(u);
+              } catch (e) {}
+            }
+            if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
+            setTimeout(() => setCriticalAlert(null), 4000);
+          }
+        } else {
+          lastAlertRef.current = '';
+        }
+      } catch (err) {
+        // Detection frame error — continue
+      }
+
+      if (running) detectionLoopRef.current = requestAnimationFrame(runDetection);
+    };
+
+    detectionLoopRef.current = requestAnimationFrame(runDetection);
+
+    return () => {
+      running = false;
+      setMlDetectionActive(false);
+      if (detectionLoopRef.current) {
+        cancelAnimationFrame(detectionLoopRef.current);
+      }
+    };
+  }, [mlModelLoaded, cameraActive, audioEnabled]);
 
   // Motion Sensor (Z-axis Accelerometer)
   useEffect(() => {
@@ -489,35 +623,45 @@ export const SmartphoneDashcam: React.FC = () => {
               </div>
             )}
 
-            {/* BOUNDING BOX 1: POTHOLE 92% */}
-            <div
-              className="absolute border-2 border-[#f59e0b] bg-[#f59e0b]/15 pointer-events-none z-20 shadow-[0_0_15px_rgba(245,158,11,0.4)]"
-              style={{
-                left: `${activeHazards[0].bbox[0]}%`,
-                top: `${activeHazards[0].bbox[1]}%`,
-                width: `${activeHazards[0].bbox[2] - activeHazards[0].bbox[0]}%`,
-                height: `${activeHazards[0].bbox[3] - activeHazards[0].bbox[1]}%`,
-              }}
-            >
-              <span className="absolute -top-5 left-0 bg-[#f59e0b] text-black font-extrabold text-[10px] px-1.5 py-0.5 rounded-sm uppercase tracking-wide font-mono shadow">
-                POTHOLE 92%
-              </span>
-            </div>
+            {/* DYNAMIC DETECTED HAZARD BOUNDING BOXES (ML Detections) */}
+            {activeHazards.map((hz, idx) => {
+              const isPed = hz.hazard_type === 'PEDESTRIAN';
+              const isAnimal = hz.hazard_type === 'ANIMAL';
+              const isWater = hz.hazard_type === 'WATERLOGGING';
+              const color = isPed ? '#ef4444' : isAnimal ? '#dc2626' : isWater ? '#06b6d4' : '#f59e0b';
+              const textColor = isPed || isAnimal ? 'text-white' : 'text-black';
 
-            {/* BOUNDING BOX 2: PEDESTRIAN 88% */}
-            <div
-              className="absolute border-2 border-[#ef4444] bg-[#ef4444]/15 pointer-events-none z-20 shadow-[0_0_15px_rgba(239,68,68,0.5)]"
-              style={{
-                left: `${activeHazards[1].bbox[0]}%`,
-                top: `${activeHazards[1].bbox[1]}%`,
-                width: `${activeHazards[1].bbox[2] - activeHazards[1].bbox[0]}%`,
-                height: `${activeHazards[1].bbox[3] - activeHazards[1].bbox[1]}%`,
-              }}
-            >
-              <span className="absolute -top-5 left-0 bg-[#ef4444] text-white font-extrabold text-[10px] px-1.5 py-0.5 rounded-sm uppercase tracking-wide font-mono shadow">
-                PEDESTRIAN 88%
-              </span>
-            </div>
+              const w = Math.max(6, (hz.bbox[2] || 0) - (hz.bbox[0] || 0));
+              const h = Math.max(6, (hz.bbox[3] || 0) - (hz.bbox[1] || 0));
+
+              return (
+                <div
+                  key={idx}
+                  className="absolute border-2 pointer-events-none z-20 transition-all duration-150 animate-pulse"
+                  style={{
+                    borderColor: color,
+                    backgroundColor: `${color}25`,
+                    boxShadow: `0 0 15px ${color}80`,
+                    left: `${hz.bbox[0]}%`,
+                    top: `${hz.bbox[1]}%`,
+                    width: `${w}%`,
+                    height: `${h}%`,
+                  }}
+                >
+                  <span
+                    className={`absolute -top-5 left-0 font-extrabold text-[10px] px-1.5 py-0.5 rounded-sm uppercase tracking-wide font-mono shadow ${textColor}`}
+                    style={{ backgroundColor: color }}
+                  >
+                    {hz.label || hz.hazard_type} {Math.round(hz.confidence * 100)}%
+                  </span>
+                  {hz.distance_m !== undefined && (
+                    <span className="absolute -bottom-4 right-0 bg-black/80 text-white font-mono text-[9px] px-1 rounded border border-white/10">
+                      {Math.round(hz.distance_m)}m
+                    </span>
+                  )}
+                </div>
+              );
+            })}
 
             {criticalAlert && (
               <div className="absolute top-12 left-6 right-6 z-40 bg-[#ef4444]/95 border-2 border-white text-white p-2.5 rounded-xl text-center font-bold text-xs shadow-2xl backdrop-blur-md animate-bounce">

@@ -29,6 +29,14 @@ import {
 } from 'lucide-react';
 import Peer from 'peerjs';
 import { SUPPORTED_LANGUAGES, audioSynthesizer } from '@margai/localization';
+import {
+  loadDetectionModel,
+  detectHazards,
+  startGeoTracking,
+  stopGeoTracking,
+  getCurrentPosition,
+  type DetectedHazard,
+} from '../services/hazardDetector';
 
 interface HazardItem {
   id: string;
@@ -37,6 +45,10 @@ interface HazardItem {
   n: number;
   alerted: boolean;
   confirmed?: boolean;
+  bbox?: [number, number, number, number];
+  confidence?: number;
+  label?: string;
+  geo?: { lat: number; lng: number; accuracy?: number };
 }
 
 interface LanguageCatalog {
@@ -155,10 +167,13 @@ export const InCarDisplay: React.FC = () => {
   const [showPairModal, setShowPairModal] = useState<boolean>(false);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
 
-  // Active Hazards Queue
-  const [hazards, setHazards] = useState<HazardItem[]>([
-    { id: 'hz_ped_1', key: 'walker', distance: 100, n: 1, alerted: true, confirmed: true },
-  ]);
+  // Active Hazards Queue — Empty by default, populated ONLY when hazards come in sight
+  const [hazards, setHazards] = useState<HazardItem[]>([]);
+  const [activeGeo, setActiveGeo] = useState<{ lat: number; lng: number }>({ lat: 12.9716, lng: 77.5946 });
+  const [isMlDetecting, setIsMlDetecting] = useState<boolean>(false);
+  const analysisCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const mlLoopRef = useRef<number | null>(null);
+  const lastAlertTimeRef = useRef<number>(0);
 
   const [noteText, setNoteText] = useState<{ text: string; until: number }>({
     text: '',
@@ -320,6 +335,52 @@ export const InCarDisplay: React.FC = () => {
     }
   };
 
+  // Real-Time ML Detection Loop on live incoming camera feed in Infotainment
+  useEffect(() => {
+    let running = true;
+    let modelReady = false;
+
+    loadDetectionModel().then((ok) => {
+      modelReady = ok;
+      if (ok) console.log('Infotainment ML Vision Pipeline Ready');
+    });
+
+    if (!analysisCanvasRef.current) {
+      const c = document.createElement('canvas');
+      c.width = 160;
+      c.height = 120;
+      analysisCanvasRef.current = c;
+    }
+
+    let lastRun = 0;
+    const detectLoop = async () => {
+      if (!running) return;
+
+      const v = remoteVideoRef.current;
+      const now = performance.now();
+
+      if (v && v.readyState >= 2 && modelReady && (cameraStream || phoneCameraB64) && now - lastRun > 250) {
+        lastRun = now;
+        try {
+          const res = await detectHazards(v, analysisCanvasRef.current!);
+          if (res.hazards.length > 0) {
+            setIsMlDetecting(true);
+            ingestPhoneHazards(res.hazards);
+          }
+        } catch (e) {}
+      }
+
+      mlLoopRef.current = requestAnimationFrame(detectLoop);
+    };
+
+    mlLoopRef.current = requestAnimationFrame(detectLoop);
+
+    return () => {
+      running = false;
+      if (mlLoopRef.current) cancelAnimationFrame(mlLoopRef.current);
+    };
+  }, [cameraStream, phoneCameraB64]);
+
   // BroadcastChannel: Cross-Tab Camera Frame Stream from Smartphone
   useEffect(() => {
     let bc: BroadcastChannel | null = null;
@@ -352,30 +413,89 @@ export const InCarDisplay: React.FC = () => {
     };
   }, [isBumpActive]);
 
-  const applyScenario = (mode: 'urgent' | 'vernacular' | 'cleared') => {
-    setActiveScenario(mode);
-    if (mode === 'urgent') {
+  const applyScenario = (mode: 'urgent' | 'vernacular' | 'cleared' | 'pothole' | 'animal' | 'waterlogging') => {
+    setActiveScenario(mode as any);
+    if (mode === 'urgent' || mode === 'vernacular') {
       setVehicleSpeed(90);
       setHazards([
-        { id: 'hz_ped_1', key: 'walker', distance: 100, n: 1, alerted: true, confirmed: true },
+        {
+          id: 'hz_ped_1',
+          key: 'walker',
+          distance: 75,
+          n: 1,
+          alerted: true,
+          confirmed: true,
+          label: 'Pedestrian',
+          confidence: 94,
+          bbox: [66, 26, 84, 82],
+          geo: activeGeo,
+        },
       ]);
       setNoteText({ text: '', until: 0 });
       playChime(3);
       speakPhrase('walker');
-    } else if (mode === 'vernacular') {
+    } else if (mode === 'pothole') {
       setVehicleSpeed(65);
-      setCurrentLang('ta');
       setHazards([
-        { id: 'hz_ped_1', key: 'walker', distance: 75, n: 1, alerted: true, confirmed: true },
+        {
+          id: 'hz_pot_1',
+          key: 'pothole',
+          distance: 45,
+          n: 2,
+          alerted: true,
+          confirmed: true,
+          label: 'Pothole D40',
+          confidence: 92,
+          bbox: [22, 58, 48, 80],
+          geo: activeGeo,
+        },
+      ]);
+      setNoteText({ text: '', until: 0 });
+      playChime(2);
+      speakPhrase('pothole');
+    } else if (mode === 'animal') {
+      setVehicleSpeed(55);
+      setHazards([
+        {
+          id: 'hz_ani_1',
+          key: 'animal',
+          distance: 50,
+          n: 1,
+          alerted: true,
+          confirmed: true,
+          label: 'Stray Cattle',
+          confidence: 89,
+          bbox: [40, 35, 68, 75],
+          geo: activeGeo,
+        },
       ]);
       setNoteText({ text: '', until: 0 });
       playChime(3);
-      speakPhrase('walker');
+      speakPhrase('animal');
+    } else if (mode === 'waterlogging') {
+      setVehicleSpeed(50);
+      setHazards([
+        {
+          id: 'hz_wat_1',
+          key: 'waterlogging',
+          distance: 40,
+          n: 1,
+          alerted: true,
+          confirmed: true,
+          label: 'Flooded Surface',
+          confidence: 91,
+          bbox: [12, 65, 52, 88],
+          geo: activeGeo,
+        },
+      ]);
+      setNoteText({ text: '', until: 0 });
+      playChime(2);
+      speakPhrase('waterlogging');
     } else if (mode === 'cleared') {
       setVehicleSpeed(90);
       setHazards([]);
       setNoteText({
-        text: 'NO HAZARDS AHEAD · Auto-Purged Passed Pothole',
+        text: 'NO HAZARDS IN SIGHT · Geofenced Corridor Clear',
         until: Date.now() + 15000,
       });
       playChime(1);
@@ -383,26 +503,48 @@ export const InCarDisplay: React.FC = () => {
   };
 
   const ingestPhoneHazards = (detectedHazards: any[]) => {
+    if (!detectedHazards || detectedHazards.length === 0) return;
+
     detectedHazards.forEach((dh) => {
       let key = 'pothole';
       const ht = (dh.hazard_type || '').toUpperCase();
-      if (ht.includes('ANIMAL') || ht.includes('COW') || ht.includes('CATTLE')) key = 'animal';
+      if (ht.includes('ANIMAL') || ht.includes('COW') || ht.includes('CATTLE') || ht.includes('DOG')) key = 'animal';
       else if (ht.includes('PEDESTRIAN') || ht.includes('WALKER') || ht.includes('PERSON')) key = 'walker';
       else if (ht.includes('WATER') || ht.includes('FLOOD')) key = 'waterlogging';
       else if (ht.includes('CURVE') || ht.includes('TURN')) key = 'curve';
       else if (ht.includes('POTHOLE')) key = 'pothole';
 
-      setHazards((prev) => {
-        const exists = prev.find((h) => h.key === key && h.distance > 40);
-        if (exists) {
-          return prev.map((h) => (h.id === exists.id ? { ...h, n: h.n + 1 } : h));
-        }
-        const estDist = dh.distance_m ? Math.round(dh.distance_m) : 100;
-        const spec = HAZARD_SPECS[key] || HAZARD_SPECS.pothole;
+      const estDist = dh.distance_m ? Math.round(dh.distance_m) : 60;
+      const spec = HAZARD_SPECS[key] || HAZARD_SPECS.pothole;
+      const conf = dh.confidence ? Math.round(dh.confidence * 100) : 92;
 
-        showToast(`📡 V2V Road Alert: ${spec.n} ahead (${estDist}m)`);
-        playChime(spec.lv);
-        speakPhrase(key);
+      if (dh.geo) {
+        setActiveGeo({ lat: dh.geo.lat, lng: dh.geo.lng });
+      }
+
+      setHazards((prev) => {
+        const exists = prev.find((h) => h.key === key);
+        if (exists) {
+          return prev.map((h) =>
+            h.id === exists.id
+              ? {
+                  ...h,
+                  distance: estDist,
+                  n: h.n + 1,
+                  bbox: dh.bbox || h.bbox,
+                  confidence: conf,
+                  label: dh.label || spec.n,
+                }
+              : h
+          );
+        }
+
+        if (Date.now() - lastAlertTimeRef.current > 4000) {
+          lastAlertTimeRef.current = Date.now();
+          showToast(`🚨 ${spec.n.toUpperCase()} IN SIGHT [Geofenced · ${estDist}m]`);
+          playChime(spec.lv);
+          speakPhrase(key);
+        }
 
         return [
           ...prev,
@@ -413,6 +555,10 @@ export const InCarDisplay: React.FC = () => {
             n: 1,
             alerted: true,
             confirmed: true,
+            bbox: dh.bbox,
+            confidence: conf,
+            label: dh.label || spec.n,
+            geo: dh.geo || activeGeo,
           },
         ];
       });
@@ -593,6 +739,56 @@ export const InCarDisplay: React.FC = () => {
           </button>
         </div>
 
+        {/* Hazard Testing Simulator Bar */}
+        <div className="flex items-center gap-1 bg-[#080c14] border border-[#1e293b] rounded-xl p-1 text-[11px]">
+          <span className="text-slate-400 font-bold px-1.5 hidden lg:inline">🧪 Sight Trigger:</span>
+          <button
+            onClick={() => applyScenario('urgent')}
+            className={`px-2 py-1 rounded-lg font-bold transition-all ${
+              hazards.some((h) => h.key === 'walker') ? 'bg-red-600 text-white shadow' : 'text-slate-300 hover:text-white'
+            }`}
+            title="Test Pedestrian in sight"
+          >
+            🚶 Pedestrian
+          </button>
+          <button
+            onClick={() => applyScenario('pothole')}
+            className={`px-2 py-1 rounded-lg font-bold transition-all ${
+              hazards.some((h) => h.key === 'pothole') ? 'bg-amber-600 text-black shadow' : 'text-slate-300 hover:text-white'
+            }`}
+            title="Test Pothole in sight"
+          >
+            🕳️ Pothole
+          </button>
+          <button
+            onClick={() => applyScenario('animal')}
+            className={`px-2 py-1 rounded-lg font-bold transition-all ${
+              hazards.some((h) => h.key === 'animal') ? 'bg-red-500 text-white shadow' : 'text-slate-300 hover:text-white'
+            }`}
+            title="Test Cattle in sight"
+          >
+            🐄 Cattle
+          </button>
+          <button
+            onClick={() => applyScenario('waterlogging')}
+            className={`px-2 py-1 rounded-lg font-bold transition-all ${
+              hazards.some((h) => h.key === 'waterlogging') ? 'bg-cyan-600 text-white shadow' : 'text-slate-300 hover:text-white'
+            }`}
+            title="Test Waterlogging in sight"
+          >
+            🌊 Water
+          </button>
+          <button
+            onClick={() => applyScenario('cleared')}
+            className={`px-2 py-1 rounded-lg font-bold transition-all ${
+              hazards.length === 0 ? 'bg-emerald-600 text-white shadow' : 'text-slate-300 hover:text-white'
+            }`}
+            title="Clear all hazards"
+          >
+            🟢 All Clear
+          </button>
+        </div>
+
         {/* Live Camera Feed Actions */}
         <div className="flex items-center gap-2">
           {/* Direct Camera Button */}
@@ -755,25 +951,52 @@ export const InCarDisplay: React.FC = () => {
                   </div>
                 )}
 
-                {/* CAMERA OVERLAYS — Only show when matching hazards are active */}
+                {/* CAMERA OVERLAYS — Only show when matching hazards are active and in sight */}
                 <div className="absolute inset-0 pointer-events-none z-10">
-                  {/* Pothole Bounding Box — only when a pothole hazard is in queue */}
-                  {hazards.some((h) => h.key === 'pothole') && (
-                    <div className="absolute left-[22%] top-[60%] w-[26%] h-[22%] border-2 border-[#f59e0b] bg-[#f59e0b]/15 shadow-[0_0_15px_rgba(245,158,11,0.5)] animate-pulse">
-                      <span className="absolute -top-5 left-0 bg-[#f59e0b] text-black font-extrabold text-[10px] px-1.5 py-0.5 rounded-sm uppercase tracking-wide font-mono">
-                        POTHOLE {Math.round((hazards.find((h) => h.key === 'pothole')?.n || 1) >= 3 ? 95 : 92)}%
-                      </span>
-                    </div>
-                  )}
+                  {/* Dynamic Bounding Boxes for every hazard in sight */}
+                  {hazards.map((h, i) => {
+                    const isPothole = h.key === 'pothole';
+                    const isWalker = h.key === 'walker';
+                    const isAnimal = h.key === 'animal';
+                    const isWater = h.key === 'waterlogging';
+                    const color = isWalker ? '#ef4444' : isAnimal ? '#dc2626' : isWater ? '#06b6d4' : '#f59e0b';
+                    const textColor = isWalker || isAnimal ? 'text-white' : 'text-black';
 
-                  {/* Pedestrian Bounding Box — only when a pedestrian hazard is in queue */}
-                  {hazards.some((h) => h.key === 'walker') && (
-                    <div className="absolute left-[68%] top-[28%] w-[18%] h-[54%] border-2 border-[#ef4444] bg-[#ef4444]/15 shadow-[0_0_15px_rgba(239,68,68,0.5)] animate-pulse">
-                      <span className="absolute -top-5 left-0 bg-[#ef4444] text-white font-extrabold text-[10px] px-1.5 py-0.5 rounded-sm uppercase tracking-wide font-mono">
-                        PEDESTRIAN {Math.round((hazards.find((h) => h.key === 'walker')?.n || 1) >= 3 ? 94 : 88)}%
-                      </span>
-                    </div>
-                  )}
+                    // Use detected bbox percentage if available, otherwise realistic position
+                    const left = h.bbox ? h.bbox[0] : isPothole ? 22 : isWalker ? 68 : isWater ? 15 : 45;
+                    const top = h.bbox ? h.bbox[1] : isPothole ? 60 : isWalker ? 28 : isWater ? 68 : 38;
+                    const width = h.bbox ? Math.max(8, h.bbox[2] - h.bbox[0]) : isPothole ? 26 : isWalker ? 18 : isWater ? 35 : 24;
+                    const height = h.bbox ? Math.max(8, h.bbox[3] - h.bbox[1]) : isPothole ? 22 : isWalker ? 54 : isWater ? 20 : 38;
+
+                    return (
+                      <div
+                        key={h.id || i}
+                        className="absolute border-2 pointer-events-none transition-all duration-150 animate-pulse"
+                        style={{
+                          left: `${left}%`,
+                          top: `${top}%`,
+                          width: `${width}%`,
+                          height: `${height}%`,
+                          borderColor: color,
+                          backgroundColor: `${color}20`,
+                          boxShadow: `0 0 16px ${color}80`,
+                        }}
+                      >
+                        <span
+                          className={`absolute -top-5 left-0 font-extrabold text-[10px] px-1.5 py-0.5 rounded-sm uppercase tracking-wide font-mono shadow ${textColor}`}
+                          style={{ backgroundColor: color }}
+                        >
+                          {h.label || (isWalker ? 'PEDESTRIAN' : isPothole ? 'POTHOLE' : isAnimal ? 'ANIMAL' : 'WATERLOGGING')} {h.confidence || 92}%
+                        </span>
+
+                        {/* Geofence Tag on bounding box */}
+                        <span className="absolute -bottom-4 left-0 bg-black/85 text-emerald-300 font-mono text-[9px] px-1.5 py-0.2 rounded border border-emerald-500/30 flex items-center gap-1 shadow whitespace-nowrap">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                          <span>GEOFENCE: {activeGeo.lat.toFixed(4)}°N, {activeGeo.lng.toFixed(4)}°E</span>
+                        </span>
+                      </div>
+                    );
+                  })}
 
                   {/* Roadside Filter Indicator — only when any hazard is active */}
                   {hazards.length > 0 && (
@@ -937,19 +1160,51 @@ export const InCarDisplay: React.FC = () => {
             {/* TOP ALERT BANNER (Slide 10.2 & 10.3) */}
             <div className="p-3 sm:p-4 z-20">
               {topHazard && !isClearedState ? (
-                <div className="w-full bg-[#300d12]/95 border border-[#ef4444] rounded-2xl p-3 sm:p-3.5 shadow-2xl backdrop-blur-xl flex items-center justify-between gap-3">
+                <div
+                  className={`w-full rounded-2xl p-3 sm:p-3.5 shadow-2xl backdrop-blur-xl flex items-center justify-between gap-3 border transition-all ${
+                    topHazard.key === 'pothole'
+                      ? 'bg-[#2d1a08]/95 border-[#f59e0b]'
+                      : topHazard.key === 'waterlogging'
+                      ? 'bg-[#09232d]/95 border-[#06b6d4]'
+                      : topHazard.key === 'animal'
+                      ? 'bg-[#33140c]/95 border-[#ea580c]'
+                      : 'bg-[#300d12]/95 border-[#ef4444]'
+                  }`}
+                >
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-[#ef4444]/20 border border-[#ef4444] flex items-center justify-center text-[#ef4444] font-extrabold text-lg flex-shrink-0">
-                      ▲
+                    <div
+                      className={`w-9 h-9 rounded-xl border flex items-center justify-center font-extrabold text-lg flex-shrink-0 ${
+                        topHazard.key === 'pothole'
+                          ? 'bg-[#f59e0b]/20 border-[#f59e0b] text-[#f59e0b]'
+                          : topHazard.key === 'waterlogging'
+                          ? 'bg-[#06b6d4]/20 border-[#06b6d4] text-[#06b6d4]'
+                          : topHazard.key === 'animal'
+                          ? 'bg-[#ea580c]/20 border-[#ea580c] text-[#ea580c]'
+                          : 'bg-[#ef4444]/20 border-[#ef4444] text-[#ef4444]'
+                      }`}
+                    >
+                      {topHazard.key === 'pothole' ? '🕳️' : topHazard.key === 'waterlogging' ? '🌊' : topHazard.key === 'animal' ? '🐄' : '▲'}
                     </div>
                     <div>
                       <div className="text-xs sm:text-sm font-extrabold text-white leading-tight">
-                        URGENT: Person Crossing Ahead. Brake gently
+                        {topHazard.key === 'walker'
+                          ? 'URGENT: Person Crossing Ahead. Brake gently'
+                          : topHazard.key === 'animal'
+                          ? 'URGENT: Stray Cattle / Animal Crossing Ahead. Slow down'
+                          : topHazard.key === 'waterlogging'
+                          ? 'CAUTION: Flooded Road Surface Ahead. Reduce speed'
+                          : 'CAUTION: Pothole Detected in Lane. Slow down'}
                       </div>
-                      <div className="text-[11px] text-red-200/90 font-medium mt-0.5 tracking-wide">
-                        {currentLang === 'ta'
-                          ? 'முன்னே ஒருவர் சாலையைக் கடக்கிறார். கவனம்.'
-                          : 'தமிழ் | తెలుగు | हिन्दी'}
+                      <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                        <span className="text-[11px] text-slate-200/90 font-medium tracking-wide">
+                          {LOCALIZED_CATALOG[currentLang]?.hazardPhrases[topHazard.key as keyof typeof LOCALIZED_CATALOG.en.hazardPhrases] ||
+                            LOCALIZED_CATALOG.en.hazardPhrases[topHazard.key as keyof typeof LOCALIZED_CATALOG.en.hazardPhrases] ||
+                            'முன்னே கவனம் தேவை.'}
+                        </span>
+                        <span className="text-[9px] font-mono text-emerald-300 bg-black/60 px-1.5 py-0.2 rounded border border-emerald-500/30 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                          <span>GEOFENCE: {activeGeo.lat.toFixed(4)}°N, {activeGeo.lng.toFixed(4)}°E</span>
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -963,9 +1218,17 @@ export const InCarDisplay: React.FC = () => {
                       {[14, 22, 10, 24, 18, 12, 20].map((h, i) => (
                         <span
                           key={i}
-                          className="w-1 bg-[#ef4444] rounded-full animate-pulse"
+                          className="w-1 rounded-full animate-pulse"
                           style={{
                             height: `${h}px`,
+                            backgroundColor:
+                              topHazard.key === 'pothole'
+                                ? '#f59e0b'
+                                : topHazard.key === 'waterlogging'
+                                ? '#06b6d4'
+                                : topHazard.key === 'animal'
+                                ? '#ea580c'
+                                : '#ef4444',
                             animationDelay: `${i * 0.12}s`,
                             animationDuration: '0.6s',
                           }}
@@ -1009,7 +1272,7 @@ export const InCarDisplay: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-[#22c55e]" />
                     <span className="text-xs text-white font-medium">
-                      Corridor Clear · Pothole Auto-Purged & Queued for BBMP Repair
+                      NO HAZARDS IN SIGHT · Geofenced Corridor Clear (ORR Bangalore)
                     </span>
                   </div>
                   <span className="text-[10px] font-mono text-emerald-400">0 Hazards Ahead</span>
