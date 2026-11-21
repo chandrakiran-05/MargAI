@@ -146,14 +146,13 @@ export const InCarDisplay: React.FC = () => {
   // Left View Mode: 'camera' (Slide 10.3) vs 'road' (Slide 10.2)
   const [leftViewMode, setLeftViewMode] = useState<'camera' | 'road'>('camera');
 
-  // Phone Cam PiP & WebRTC Remote Streaming
+  // Phone Cam Streams: Direct MediaStream or Base64 Frames
   const [peerId] = useState<string>(() => `margai-${Math.floor(1000 + Math.random() * 9000)}`);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [isWebRtcConnected, setIsWebRtcConnected] = useState<boolean>(false);
-  const [phoneConnected, setPhoneConnected] = useState<boolean>(true);
   const [phoneCameraB64, setPhoneCameraB64] = useState<string | null>(null);
   const [showPairModal, setShowPairModal] = useState<boolean>(false);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
-  const [isLocalCameraActive, setIsLocalCameraActive] = useState<boolean>(false);
 
   // Active Hazards Queue
   const [hazards, setHazards] = useState<HazardItem[]>([
@@ -172,7 +171,6 @@ export const InCarDisplay: React.FC = () => {
   const toastTimerRef = useRef<any>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const pipVideoRef = useRef<HTMLVideoElement | null>(null);
-  const pipImgRef = useRef<HTMLImageElement | null>(null);
 
   vehicleSpeedRef.current = vehicleSpeed;
 
@@ -190,36 +188,42 @@ export const InCarDisplay: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // WebRTC PeerJS Server for Direct Phone-to-Cockpit Camera Streaming
+  // WebRTC PeerJS Setup with Public STUN Servers
   useEffect(() => {
     let peer: Peer | null = null;
     try {
-      peer = new Peer(peerId, { debug: 1 });
+      peer = new Peer(peerId, {
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun.cloudflare.com:3478' },
+          ],
+        },
+      });
+
       peer.on('open', (id) => {
         console.log('Infotainment WebRTC Peer ready:', id);
       });
 
       peer.on('call', (call) => {
-        console.log('Receiving phone camera stream call...');
-        call.answer(); // Answer without outgoing stream
+        console.log('Incoming call from smartphone...');
+        call.answer();
         call.on('stream', (remoteStream) => {
-          console.log('Connected phone camera stream:', remoteStream);
+          console.log('Received smartphone camera stream:', remoteStream);
+          setCameraStream(remoteStream);
           setIsWebRtcConnected(true);
           setLeftViewMode('camera');
-          showToast('📱 Phone Camera Feed Connected to Infotainment!');
-
-          if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = remoteStream;
-            remoteVideoRef.current.play().catch(() => {});
-          }
-          if (pipVideoRef.current) {
-            pipVideoRef.current.srcObject = remoteStream;
-            pipVideoRef.current.play().catch(() => {});
-          }
+          showToast('📱 Smartphone Camera Connected to Infotainment!');
         });
       });
+
+      peer.on('error', (err) => {
+        console.warn('Peer note:', err);
+      });
     } catch (e) {
-      console.warn('WebRTC peer note:', e);
+      console.warn('WebRTC peer init note:', e);
     }
 
     return () => {
@@ -227,31 +231,36 @@ export const InCarDisplay: React.FC = () => {
     };
   }, [peerId]);
 
-  // Direct Hardware Camera Trigger
+  // Robustly Attach MediaStream to Video Elements whenever Stream or ViewMode changes
+  useEffect(() => {
+    if (cameraStream) {
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = cameraStream;
+        remoteVideoRef.current.play().catch(() => {});
+      }
+      if (pipVideoRef.current) {
+        pipVideoRef.current.srcObject = cameraStream;
+        pipVideoRef.current.play().catch(() => {});
+      }
+    }
+  }, [cameraStream, leftViewMode]);
+
+  // Direct Hardware Camera Trigger (For same phone or laptop camera)
   const startDeviceCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } },
         audio: false,
       });
-      setIsLocalCameraActive(true);
+      setCameraStream(stream);
       setLeftViewMode('camera');
-      showToast('🎥 Direct Camera Feed Active');
-
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = stream;
-        remoteVideoRef.current.play().catch(() => {});
-      }
-      if (pipVideoRef.current) {
-        pipVideoRef.current.srcObject = stream;
-        pipVideoRef.current.play().catch(() => {});
-      }
+      showToast('🎥 Device Camera Feed Active on Infotainment!');
     } catch (err) {
-      showToast('Camera access request declined or unavailable');
+      showToast('Camera permission declined or camera not found');
     }
   };
 
-  // BroadcastChannel: Zero-Latency In-Browser Stream from Smartphone
+  // BroadcastChannel: Cross-Tab Camera Frame Stream from Smartphone
   useEffect(() => {
     let bc: BroadcastChannel | null = null;
     try {
@@ -259,7 +268,6 @@ export const InCarDisplay: React.FC = () => {
       bc.onmessage = (event) => {
         const msg = event.data;
         if (!msg) return;
-        setPhoneConnected(true);
 
         if (msg.speed_kmh !== undefined && msg.speed_kmh > 0) {
           setVehicleSpeed(Math.round(msg.speed_kmh));
@@ -272,7 +280,6 @@ export const InCarDisplay: React.FC = () => {
         }
         if (msg.camera_b64) {
           setPhoneCameraB64(msg.camera_b64);
-          if (pipImgRef.current) pipImgRef.current.src = msg.camera_b64;
         }
         if (msg.hazards && msg.hazards.length > 0) {
           ingestPhoneHazards(msg.hazards);
@@ -492,6 +499,8 @@ export const InCarDisplay: React.FC = () => {
     }
   };
 
+  const hasLiveCamera = !!cameraStream || !!phoneCameraB64;
+
   return (
     <div className="w-full max-w-7xl mx-auto p-2 sm:p-4 font-['Plus_Jakarta_Sans',sans-serif]">
       {/* SCENARIO & CAMERA SOURCE CONTROLS BAR */}
@@ -529,14 +538,14 @@ export const InCarDisplay: React.FC = () => {
           <button
             onClick={startDeviceCamera}
             className={`px-3 py-1.5 rounded-xl border font-bold flex items-center gap-1.5 transition-all ${
-              isLocalCameraActive
+              cameraStream
                 ? 'bg-[#22c55e] text-black border-[#22c55e]'
                 : 'bg-[#1e293b] text-slate-200 border-slate-700 hover:bg-slate-700'
             }`}
             title="Use current device camera directly"
           >
             <Camera className="w-3.5 h-3.5" />
-            <span>{isLocalCameraActive ? 'Camera Active' : 'Enable Device Camera'}</span>
+            <span>{cameraStream ? 'Camera Active' : 'Enable Device Camera'}</span>
           </button>
 
           {/* QR Pairing for Phone Camera Stream */}
@@ -571,8 +580,10 @@ export const InCarDisplay: React.FC = () => {
             <span className="text-[10px] text-slate-400 hidden sm:inline">
               {isWebRtcConnected
                 ? 'Smartphone Camera: Streaming (WebRTC HD)'
-                : isLocalCameraActive
+                : cameraStream
                 ? 'Local Dashcam Feed Active'
+                : phoneCameraB64
+                ? 'Smartphone Dashcam Feed Active'
                 : 'MargAI Road Intelligence Active'}
             </span>
           </div>
@@ -618,34 +629,58 @@ export const InCarDisplay: React.FC = () => {
             {/* VIEWPORT: CAMERA FEED (SLIDE 10.3) */}
             {leftViewMode === 'camera' ? (
               <div className="relative w-full h-full bg-black overflow-hidden flex items-center justify-center">
-                {/* 1. Direct WebRTC Remote Phone Stream or Local Device Camera */}
-                <video
-                  ref={remoteVideoRef}
-                  playsInline
-                  muted
-                  autoPlay
-                  className="w-full h-full object-cover"
-                />
-
-                {/* 2. Base64 Frame Stream from Smartphone */}
-                {!remoteVideoRef.current?.srcObject && phoneCameraB64 && (
-                  <img
-                    src={phoneCameraB64}
-                    alt="Smartphone Stream"
-                    className="absolute inset-0 w-full h-full object-cover"
-                  />
-                )}
-
-                {/* 3. Fallback High-Def Indian Road Loop Video if Camera Not Yet Paired */}
-                {!remoteVideoRef.current?.srcObject && !phoneCameraB64 && (
+                {/* 1. Direct WebRTC Stream or Local Camera */}
+                {cameraStream ? (
                   <video
-                    src="./road_sample.mp4"
+                    ref={remoteVideoRef}
                     playsInline
                     muted
                     autoPlay
-                    loop
-                    className="absolute inset-0 w-full h-full object-cover"
+                    className="w-full h-full object-cover"
                   />
+                ) : phoneCameraB64 ? (
+                  /* 2. Base64 Frame Stream from Smartphone */
+                  <img
+                    src={phoneCameraB64}
+                    alt="Smartphone Stream"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  /* 3. Waiting for Camera Feed Overlay with 1-Click Buttons */
+                  <div className="relative w-full h-full">
+                    <video
+                      src="./road_sample.mp4"
+                      playsInline
+                      muted
+                      autoPlay
+                      loop
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-black/55 backdrop-blur-[2px] flex flex-col items-center justify-center p-4 text-center z-20">
+                      <div className="bg-[#0f1422]/95 border border-white/20 p-5 rounded-2xl max-w-sm shadow-2xl flex flex-col items-center gap-3">
+                        <Camera className="w-10 h-10 text-[#38bdf8] animate-bounce" />
+                        <h4 className="font-extrabold text-white text-base">Show Phone Camera Feed</h4>
+                        <p className="text-xs text-slate-300 font-sans">
+                          Turn on your device's camera or scan the QR code with your smartphone to stream live road vision.
+                        </p>
+                        <div className="flex flex-col w-full gap-2 pt-1 font-mono text-xs">
+                          <button
+                            onClick={startDeviceCamera}
+                            className="w-full py-2.5 bg-[#22c55e] hover:bg-emerald-600 text-black font-extrabold rounded-xl shadow-lg transition-all"
+                          >
+                            🎥 Enable This Device's Camera
+                          </button>
+                          <button
+                            onClick={() => setShowPairModal(true)}
+                            className="w-full py-2.5 bg-[#4285F4] hover:bg-blue-600 text-white font-bold rounded-xl shadow-lg transition-all flex items-center justify-center gap-1.5"
+                          >
+                            <QrCode className="w-4 h-4" />
+                            <span>Pair Another Phone via QR</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 )}
 
                 {/* CAMERA OVERLAYS (Slide 10.3: Deterministic Filtering & Perception) */}
@@ -675,10 +710,12 @@ export const InCarDisplay: React.FC = () => {
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
                     <span>
                       {isWebRtcConnected
-                        ? 'Phone Cam (WebRTC)'
-                        : isLocalCameraActive
+                        ? 'Phone Cam (WebRTC HD)'
+                        : cameraStream
                         ? 'Device Cam (Live)'
-                        : 'Phone Cam Loop'}
+                        : phoneCameraB64
+                        ? 'Smartphone Sync'
+                        : 'Camera Ready'}
                     </span>
                   </div>
                 </div>
@@ -950,29 +987,28 @@ export const InCarDisplay: React.FC = () => {
               {/* Picture-in-Picture Phone Camera Feed in Corner */}
               {leftViewMode === 'road' && (
                 <div className="absolute right-3 bottom-3 w-40 sm:w-48 aspect-video rounded-xl overflow-hidden border border-white/20 shadow-2xl z-20 bg-black">
-                  <video
-                    ref={pipVideoRef}
-                    playsInline
-                    muted
-                    autoPlay
-                    className="w-full h-full object-cover"
-                  />
-                  {!pipVideoRef.current?.srcObject && phoneCameraB64 && (
+                  {cameraStream ? (
+                    <video
+                      ref={pipVideoRef}
+                      playsInline
+                      muted
+                      autoPlay
+                      className="w-full h-full object-cover"
+                    />
+                  ) : phoneCameraB64 ? (
                     <img
-                      ref={pipImgRef}
                       src={phoneCameraB64}
                       alt="Phone Cam"
-                      className="absolute inset-0 w-full h-full object-cover"
+                      className="w-full h-full object-cover"
                     />
-                  )}
-                  {!pipVideoRef.current?.srcObject && !phoneCameraB64 && (
+                  ) : (
                     <video
                       src="./road_sample.mp4"
                       playsInline
                       muted
                       autoPlay
                       loop
-                      className="absolute inset-0 w-full h-full object-cover"
+                      className="w-full h-full object-cover"
                     />
                   )}
                   <div className="absolute top-1 left-1.5 bg-black/80 px-1.5 py-0.5 rounded text-[9px] font-mono text-emerald-400">

@@ -54,7 +54,6 @@ export const SmartphoneDashcam: React.FC = () => {
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number }>({ lat: 12.9716, lng: 77.5946 });
   const [speedKmh, setSpeedKmh] = useState<number>(65);
   const [zAccelG, setZAccelG] = useState<number>(1.02);
-  const [roundtripLatency, setRoundtripLatency] = useState<number>(18);
   const [fps, setFps] = useState<number>(24);
   const [isBumpSpike, setIsBumpSpike] = useState<boolean>(false);
 
@@ -137,7 +136,16 @@ export const SmartphoneDashcam: React.FC = () => {
     if (!target) return;
     try {
       if (peerInstanceRef.current) peerInstanceRef.current.destroy();
-      const peer = new Peer();
+      const peer = new Peer({
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun.cloudflare.com:3478' },
+          ],
+        },
+      });
       peerInstanceRef.current = peer;
 
       peer.on('open', (id) => {
@@ -169,68 +177,49 @@ export const SmartphoneDashcam: React.FC = () => {
     }
   }, [pairTarget, cameraActive]);
 
-  // Auto-start video or camera on mount
-  useEffect(() => {
-    startStreamSource();
-    return () => {
+  // Start Hardware Camera (Direct user gesture for mobile browser compliance)
+  const startHardwareCamera = async () => {
+    try {
+      setVideoSource('camera');
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
       }
-    };
-  }, [videoSource, facingMode]);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: facingMode }, width: { ideal: 1280 } },
+        audio: false,
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      }
+      setCameraActive(true);
+      setIsStreaming(true);
+      setSourceNotice('📱 Phone Camera Active & Streaming to Infotainment');
+      if (pairTarget) {
+        connectToCockpitPeer(pairTarget);
+      }
+    } catch (err) {
+      console.warn('Camera permission note:', err);
+      setSourceNotice('Please tap Allow when prompted for Camera access.');
+    }
+  };
 
-  const startStreamSource = async () => {
+  // Attempt initial stream or fallback loop
+  useEffect(() => {
     if (videoSource === 'sample_video') {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
-      }
       if (videoRef.current) {
         videoRef.current.srcObject = null;
         videoRef.current.src = './road_sample.mp4';
         videoRef.current.loop = true;
         videoRef.current.muted = true;
         videoRef.current.playsInline = true;
-        try {
-          await videoRef.current.play();
-          setCameraActive(true);
-          setIsStreaming(true);
-          if (pairTarget && (videoRef.current as any).captureStream) {
-            streamRef.current = (videoRef.current as any).captureStream();
-            connectToCockpitPeer(pairTarget);
-          }
-        } catch (e) {}
+        videoRef.current.play().catch(() => {});
       }
-      return;
+    } else if (videoSource === 'camera') {
+      startHardwareCamera();
     }
-
-    if (videoSource === 'camera') {
-      try {
-        if (streamRef.current) {
-          streamRef.current.getTracks().forEach((t) => t.stop());
-        }
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: facingMode }, width: { ideal: 640 } },
-          audio: false,
-        });
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.onloadedmetadata = () => {
-            videoRef.current?.play();
-            setCameraActive(true);
-            setIsStreaming(true);
-            if (pairTarget) {
-              connectToCockpitPeer(pairTarget);
-            }
-          };
-        }
-      } catch (err) {
-        setVideoSource('sample_video');
-        setSourceNotice('Hardware camera unavailable. Playing real-world Indian road driving stream.');
-      }
-    }
-  };
+  }, [facingMode]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -415,6 +404,22 @@ export const SmartphoneDashcam: React.FC = () => {
             />
             <canvas ref={canvasRef} className="hidden" />
 
+            {/* ACTIVATION OVERLAY IF CAMERA NOT YET STARTED BY USER GESTURE */}
+            {!cameraActive && (
+              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-30 flex flex-col items-center justify-center p-4 text-center">
+                <button
+                  onClick={startHardwareCamera}
+                  className="px-6 py-3.5 bg-[#22c55e] hover:bg-emerald-600 text-black font-black text-sm rounded-2xl shadow-2xl flex items-center gap-2.5 transition-all transform active:scale-95 animate-pulse"
+                >
+                  <Camera className="w-5 h-5" />
+                  <span>TAP TO START PHONE CAMERA &amp; STREAM</span>
+                </button>
+                <p className="text-xs text-slate-300 mt-2.5 font-sans">
+                  Allows streaming your live phone camera feed to the Infotainment display
+                </p>
+              </div>
+            )}
+
             {/* BOUNDING BOX 1: POTHOLE 92% */}
             <div
               className="absolute border-2 border-[#f59e0b] bg-[#f59e0b]/15 pointer-events-none z-20 shadow-[0_0_15px_rgba(245,158,11,0.4)]"
@@ -471,6 +476,8 @@ export const SmartphoneDashcam: React.FC = () => {
                 <span>
                   {isPeerStreaming
                     ? `STREAMING TO COCKPIT (${pairTarget})`
+                    : pairTarget
+                    ? `PAIRING TO ${pairTarget}`
                     : 'WEBSOCKET: STREAMING'}
                 </span>
               </div>
@@ -535,11 +542,19 @@ export const SmartphoneDashcam: React.FC = () => {
       {/* CONTROLS & MANUAL COCKPIT PAIRING BAR */}
       <div className="mt-4 flex flex-wrap items-center justify-center gap-2 bg-[#0d1322] border border-[#1e293b] p-2.5 px-4 rounded-2xl text-xs font-mono">
         <button
+          onClick={startHardwareCamera}
+          className="px-3.5 py-1.5 bg-[#22c55e] hover:bg-emerald-600 text-black rounded-xl font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-lg shadow-green-500/20"
+        >
+          <Camera className="w-3.5 h-3.5" />
+          <span>{cameraActive ? 'Camera Live' : 'Start Phone Camera'}</span>
+        </button>
+
+        <button
           onClick={() => triggerBumpSim(2.4)}
           className="px-3 py-1.5 bg-[#EA4335] text-white hover:bg-red-600 rounded-xl font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-lg shadow-red-500/20"
         >
           <Zap className="w-3.5 h-3.5" />
-          <span>Trigger Bump Spike (2.4G)</span>
+          <span>Bump Spike (2.4G)</span>
         </button>
 
         <div className="flex items-center bg-[#090D16] border border-[#1E293B] rounded-xl p-0.5">
@@ -559,21 +574,6 @@ export const SmartphoneDashcam: React.FC = () => {
           >
             🛣️ Road Loop
           </button>
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-              videoSource === 'custom_file' ? 'bg-[#4285F4] text-white' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            📁 File
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="video/*"
-            onChange={handleFileUpload}
-            className="hidden"
-          />
         </div>
 
         {/* Cockpit WebRTC Pair Input */}
