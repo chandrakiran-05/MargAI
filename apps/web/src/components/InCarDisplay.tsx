@@ -148,6 +148,7 @@ export const InCarDisplay: React.FC = () => {
 
   // Phone Cam Streams: Direct MediaStream or Base64 Frames
   const [peerId] = useState<string>(() => `margai-${Math.floor(1000 + Math.random() * 9000)}`);
+  const [verifiedPeerId, setVerifiedPeerId] = useState<string>('');
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [isWebRtcConnected, setIsWebRtcConnected] = useState<boolean>(false);
   const [phoneCameraB64, setPhoneCameraB64] = useState<string | null>(null);
@@ -188,7 +189,18 @@ export const InCarDisplay: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // WebRTC PeerJS Setup with Public STUN Servers
+  // Keyboard shortcut (Escape) to close pairing modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowPairModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // WebRTC PeerJS Setup with Public STUN Servers & Dual Stream/Data Listeners
   useEffect(() => {
     let peer: Peer | null = null;
     try {
@@ -205,8 +217,10 @@ export const InCarDisplay: React.FC = () => {
 
       peer.on('open', (id) => {
         console.log('Infotainment WebRTC Peer ready:', id);
+        setVerifiedPeerId(id);
       });
 
+      // 1. Incoming MediaStream Call (Audio/Video from Phone)
       peer.on('call', (call) => {
         console.log('Incoming call from smartphone...');
         call.answer();
@@ -215,11 +229,38 @@ export const InCarDisplay: React.FC = () => {
           setCameraStream(remoteStream);
           setIsWebRtcConnected(true);
           setLeftViewMode('camera');
+          setShowPairModal(false); // Auto-close pairing modal!
           showToast('📱 Smartphone Camera Connected to Infotainment!');
         });
       });
 
-      peer.on('error', (err) => {
+      // 2. Incoming DataConnection (Base64 frames & real-time telemetry fallback)
+      peer.on('connection', (conn) => {
+        console.log('Incoming data connection from smartphone...');
+        conn.on('data', (data: any) => {
+          if (!data) return;
+          if (data.camera_b64) {
+            setPhoneCameraB64(data.camera_b64);
+            setIsWebRtcConnected(true);
+            setLeftViewMode('camera');
+            setShowPairModal(false); // Auto-close pairing modal!
+          }
+          if (data.speed_kmh !== undefined && data.speed_kmh > 0) {
+            setVehicleSpeed(Math.round(data.speed_kmh));
+          }
+          if (data.road_curve) {
+            setRoadCurveType(data.road_curve);
+          }
+          if (data.z_accel_g !== undefined && data.z_accel_g > 1.8 && !isBumpActive) {
+            triggerBumpEvent(data.z_accel_g);
+          }
+          if (data.hazards && data.hazards.length > 0) {
+            ingestPhoneHazards(data.hazards);
+          }
+        });
+      });
+
+      peer.on('error', (err: any) => {
         console.warn('Peer note:', err);
       });
     } catch (e) {
@@ -245,18 +286,37 @@ export const InCarDisplay: React.FC = () => {
     }
   }, [cameraStream, leftViewMode]);
 
-  // Direct Hardware Camera Trigger (For same phone or laptop camera)
+  // Direct Hardware Camera Trigger with Automatic Fallback Cascade
   const startDeviceCamera = async () => {
+    setShowPairModal(false); // Auto-close pairing modal immediately
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } },
-        audio: false,
-      });
+      let stream: MediaStream | null = null;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } },
+          audio: false,
+        });
+      } catch (e1) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: 'user' } },
+            audio: false,
+          });
+        } catch (e2) {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
+          });
+        }
+      }
+
+      if (!stream) throw new Error('No camera stream');
       setCameraStream(stream);
       setLeftViewMode('camera');
       showToast('🎥 Device Camera Feed Active on Infotainment!');
-    } catch (err) {
-      showToast('Camera permission declined or camera not found');
+    } catch (err: any) {
+      console.warn('Camera error:', err);
+      showToast('Camera error: ' + (err.message || 'Please allow camera access'));
     }
   };
 
@@ -486,10 +546,11 @@ export const InCarDisplay: React.FC = () => {
 
   const dashFlowDuration = `${Math.max(0.4, 28 / Math.max(15, vehicleSpeed))}s`;
 
+  const activePairId = verifiedPeerId || peerId;
   const phonePairUrl =
     typeof window !== 'undefined'
-      ? `${window.location.origin}${window.location.pathname}?mode=smartphone&pair=${peerId}`
-      : `https://pbalamurali74-hue.github.io/MargAI/?mode=smartphone&pair=${peerId}`;
+      ? `${window.location.origin}${window.location.pathname}?mode=smartphone&pair=${activePairId}`
+      : `https://pbalamurali74-hue.github.io/MargAI/?mode=smartphone&pair=${activePairId}`;
 
   const copyPairLink = () => {
     if (navigator.clipboard) {
@@ -629,24 +690,35 @@ export const InCarDisplay: React.FC = () => {
             {/* VIEWPORT: CAMERA FEED (SLIDE 10.3) */}
             {leftViewMode === 'camera' ? (
               <div className="relative w-full h-full bg-black overflow-hidden flex items-center justify-center">
-                {/* 1. Direct WebRTC Stream or Local Camera */}
-                {cameraStream ? (
-                  <video
-                    ref={remoteVideoRef}
-                    playsInline
-                    muted
-                    autoPlay
-                    className="w-full h-full object-cover"
-                  />
-                ) : phoneCameraB64 ? (
-                  /* 2. Base64 Frame Stream from Smartphone */
+                {/* 1. Direct WebRTC Stream or Local Camera Video Element (Always Mounted) */}
+                <video
+                  ref={(el) => {
+                    remoteVideoRef.current = el;
+                    if (el && cameraStream && el.srcObject !== cameraStream) {
+                      el.srcObject = cameraStream;
+                      el.play().catch(() => {});
+                    }
+                  }}
+                  playsInline
+                  muted
+                  autoPlay
+                  onLoadedMetadata={(e) => {
+                    (e.target as HTMLVideoElement).play().catch(() => {});
+                  }}
+                  className={`w-full h-full object-cover ${cameraStream ? 'block' : 'hidden'}`}
+                />
+
+                {/* 2. Base64 Frame Stream from Smartphone (DataConnection or BroadcastChannel fallback) */}
+                {phoneCameraB64 && !cameraStream && (
                   <img
                     src={phoneCameraB64}
                     alt="Smartphone Stream"
                     className="w-full h-full object-cover"
                   />
-                ) : (
-                  /* 3. Waiting for Camera Feed Overlay with 1-Click Buttons */
+                )}
+
+                {/* 3. Standby Overlay with 1-Click Buttons when no live feed connected */}
+                {!cameraStream && !phoneCameraB64 && (
                   <div className="relative w-full h-full">
                     <video
                       src="./road_sample.mp4"
@@ -1085,13 +1157,23 @@ export const InCarDisplay: React.FC = () => {
 
         {/* QR CODE & WEBRTC PAIRING MODAL */}
         {showPairModal && (
-          <div className="absolute inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-            <div className="bg-[#0f1422] border border-white/10 rounded-2xl p-6 max-w-sm w-full text-center relative shadow-2xl font-mono">
+          <div
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setShowPairModal(false);
+            }}
+            className="absolute inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 cursor-pointer"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="bg-[#0f1422] border border-white/10 rounded-2xl p-6 max-w-sm w-full text-center relative shadow-2xl font-mono cursor-default"
+            >
               <button
+                type="button"
                 onClick={() => setShowPairModal(false)}
-                className="absolute top-4 right-4 text-slate-400 hover:text-white"
+                className="absolute top-3 right-3 w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center font-bold border border-slate-600 shadow-md transition-all active:scale-95"
+                aria-label="Close"
               >
-                <X className="w-5 h-5" />
+                ✕
               </button>
 
               <Smartphone className="w-10 h-10 text-[#38bdf8] mx-auto mb-2" />
@@ -1114,26 +1196,36 @@ export const InCarDisplay: React.FC = () => {
               {/* Room Code Badge */}
               <div className="mb-3 px-3 py-1.5 bg-[#172033] rounded-lg border border-slate-700 flex items-center justify-between text-xs">
                 <span className="text-slate-400">Pair Room ID:</span>
-                <span className="text-[#38bdf8] font-bold">{peerId}</span>
+                <span className="text-[#38bdf8] font-bold">{activePairId}</span>
               </div>
 
               {/* Copy URL Button */}
               <button
+                type="button"
                 onClick={copyPairLink}
-                className="w-full py-2 bg-[#1e293b] hover:bg-slate-700 text-slate-200 border border-slate-600 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all mb-2"
+                className="w-full py-2 bg-[#1e293b] hover:bg-slate-700 text-slate-200 border border-slate-600 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all mb-2 shadow"
               >
                 {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                 <span>{copiedLink ? 'Pair Link Copied!' : 'Copy Direct Smartphone Link'}</span>
               </button>
 
               <button
+                type="button"
                 onClick={() => {
                   startDeviceCamera();
                   setShowPairModal(false);
                 }}
-                className="w-full py-2 bg-[#22c55e]/20 hover:bg-[#22c55e]/30 text-[#22c55e] border border-[#22c55e]/40 rounded-xl text-xs font-bold transition-all"
+                className="w-full py-2 bg-[#22c55e]/20 hover:bg-[#22c55e]/30 text-[#22c55e] border border-[#22c55e]/40 rounded-xl text-xs font-bold transition-all mb-2"
               >
                 🎥 Or Use Current Device Camera
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowPairModal(false)}
+                className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 rounded-xl text-xs font-bold transition-all shadow-md active:scale-95"
+              >
+                ✕ Close Window
               </button>
             </div>
           </div>

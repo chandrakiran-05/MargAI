@@ -49,6 +49,7 @@ export const SmartphoneDashcam: React.FC = () => {
   const [manualPairInput, setManualPairInput] = useState<string>('');
   const [isPeerStreaming, setIsPeerStreaming] = useState<boolean>(false);
   const peerInstanceRef = useRef<Peer | null>(null);
+  const dataConnRef = useRef<any>(null);
 
   // Live Telemetry from Smartphone Sensors
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number }>({ lat: 12.9716, lng: 77.5946 });
@@ -135,6 +136,12 @@ export const SmartphoneDashcam: React.FC = () => {
   const connectToCockpitPeer = (target: string) => {
     if (!target) return;
     try {
+      // Reuse existing peer if already open
+      if (peerInstanceRef.current && !peerInstanceRef.current.destroyed && peerInstanceRef.current.open) {
+        initiateCallAndData(peerInstanceRef.current, target);
+        return;
+      }
+
       if (peerInstanceRef.current) peerInstanceRef.current.destroy();
       const peer = new Peer({
         config: {
@@ -150,17 +157,7 @@ export const SmartphoneDashcam: React.FC = () => {
 
       peer.on('open', (id) => {
         console.log('Smartphone Peer open, calling:', target);
-        let activeStream = streamRef.current;
-        if (!activeStream && videoRef.current && (videoRef.current as any).captureStream) {
-          activeStream = (videoRef.current as any).captureStream();
-        }
-
-        if (activeStream) {
-          const call = peer.call(target, activeStream);
-          call.on('close', () => setIsPeerStreaming(false));
-          setIsPeerStreaming(true);
-          setSourceNotice(`Streaming camera feed to Infotainment (${target})`);
-        }
+        initiateCallAndData(peer, target);
       });
 
       peer.on('error', (err) => {
@@ -171,37 +168,96 @@ export const SmartphoneDashcam: React.FC = () => {
     }
   };
 
+  const initiateCallAndData = (peer: Peer, target: string) => {
+    let activeStream = streamRef.current;
+    if (!activeStream && videoRef.current && (videoRef.current as any).captureStream) {
+      try {
+        activeStream = (videoRef.current as any).captureStream();
+      } catch (e) {}
+    }
+
+    if (activeStream) {
+      console.log('Initiating WebRTC call with camera stream to:', target);
+      const call = peer.call(target, activeStream);
+      call.on('close', () => setIsPeerStreaming(false));
+      call.on('error', (e) => console.warn('Call error:', e));
+      setIsPeerStreaming(true);
+      setSourceNotice(`Streaming camera feed to Infotainment (${target})`);
+    }
+
+    // Also open DataConnection for frame & telemetry backup
+    try {
+      const conn = peer.connect(target);
+      conn.on('open', () => {
+        console.log('DataConnection established with Cockpit:', target);
+        dataConnRef.current = conn;
+        setIsPeerStreaming(true);
+      });
+      conn.on('close', () => {
+        dataConnRef.current = null;
+      });
+    } catch (e) {}
+  };
+
   useEffect(() => {
     if (pairTarget && (streamRef.current || cameraActive)) {
       connectToCockpitPeer(pairTarget);
     }
   }, [pairTarget, cameraActive]);
 
-  // Start Hardware Camera (Direct user gesture for mobile browser compliance)
+  // Start Hardware Camera with Automatic Fallback Cascade
   const startHardwareCamera = async () => {
     try {
       setVideoSource('camera');
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
       }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: facingMode }, width: { ideal: 1280 } },
-        audio: false,
-      });
+
+      let stream: MediaStream | null = null;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: facingMode }, width: { ideal: 1280 } },
+          audio: false,
+        });
+      } catch (e1) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: 'environment' } },
+            audio: false,
+          });
+        } catch (e2) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: { ideal: 'user' } },
+              audio: false,
+            });
+          } catch (e3) {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: true,
+              audio: false,
+            });
+          }
+        }
+      }
+
+      if (!stream) throw new Error('No video stream obtained');
+
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play();
+        videoRef.current.play().catch(() => {});
       }
       setCameraActive(true);
       setIsStreaming(true);
       setSourceNotice('📱 Phone Camera Active & Streaming to Infotainment');
-      if (pairTarget) {
-        connectToCockpitPeer(pairTarget);
+      
+      const target = pairTarget || manualPairInput;
+      if (target) {
+        connectToCockpitPeer(target);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn('Camera permission note:', err);
-      setSourceNotice('Please tap Allow when prompted for Camera access.');
+      setSourceNotice('Camera: ' + (err.message || 'Please grant camera access.'));
     }
   };
 
@@ -313,6 +369,19 @@ export const SmartphoneDashcam: React.FC = () => {
         hazards: activeHazards,
         fps,
       });
+
+      // Send over WebRTC DataConnection fallback if open
+      if (dataConnRef.current && dataConnRef.current.open) {
+        try {
+          dataConnRef.current.send({
+            camera_b64: b64,
+            speed_kmh: speedKmh,
+            z_accel_g: zAccelG,
+            road_curve: roadCurve,
+            hazards: activeHazards,
+          });
+        } catch (e) {}
+      }
 
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(
