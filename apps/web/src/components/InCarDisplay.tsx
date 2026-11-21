@@ -154,7 +154,7 @@ export const InCarDisplay: React.FC = () => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Prototype Visual Scenarios (Matching Slide 10 panels 2, 3, 4)
-  const [activeScenario, setActiveScenario] = useState<'urgent' | 'vernacular' | 'cleared'>('urgent');
+  const [activeScenario, setActiveScenario] = useState<'urgent' | 'vernacular' | 'cleared'>('cleared');
   // Left View Mode: 'camera' (Slide 10.3) vs 'road' (Slide 10.2)
   const [leftViewMode, setLeftViewMode] = useState<'camera' | 'road'>('camera');
 
@@ -269,7 +269,7 @@ export const InCarDisplay: React.FC = () => {
           if (data.z_accel_g !== undefined && data.z_accel_g > 1.8 && !isBumpActive) {
             triggerBumpEvent(data.z_accel_g);
           }
-          if (data.hazards && data.hazards.length > 0) {
+          if (data.hazards !== undefined) {
             ingestPhoneHazards(data.hazards);
           }
         });
@@ -350,10 +350,8 @@ export const InCarDisplay: React.FC = () => {
 
       try {
         const res = await detectHazards(v, analysisCanvasRef.current!);
-        if (res.hazards.length > 0) {
-          setIsMlDetecting(true);
-          ingestPhoneHazards(res.hazards);
-        }
+        setIsMlDetecting(res.hazards.length > 0);
+        ingestPhoneHazards(res.hazards);
       } catch (e) {}
     }, 350);
 
@@ -381,7 +379,7 @@ export const InCarDisplay: React.FC = () => {
         if (msg.camera_b64) {
           setPhoneCameraB64(msg.camera_b64);
         }
-        if (msg.hazards && msg.hazards.length > 0) {
+        if (msg.hazards !== undefined) {
           ingestPhoneHazards(msg.hazards);
         }
       };
@@ -408,7 +406,8 @@ export const InCarDisplay: React.FC = () => {
           confidence: 94,
           bbox: [66, 26, 84, 82],
           geo: activeGeo,
-        },
+          manual: true,
+        } as any,
       ]);
       setNoteText({ text: '', until: 0 });
       playChime(3);
@@ -427,7 +426,8 @@ export const InCarDisplay: React.FC = () => {
           confidence: 92,
           bbox: [22, 58, 48, 80],
           geo: activeGeo,
-        },
+          manual: true,
+        } as any,
       ]);
       setNoteText({ text: '', until: 0 });
       playChime(2);
@@ -446,7 +446,8 @@ export const InCarDisplay: React.FC = () => {
           confidence: 89,
           bbox: [40, 35, 68, 75],
           geo: activeGeo,
-        },
+          manual: true,
+        } as any,
       ]);
       setNoteText({ text: '', until: 0 });
       playChime(3);
@@ -465,7 +466,8 @@ export const InCarDisplay: React.FC = () => {
           confidence: 91,
           bbox: [12, 65, 52, 88],
           geo: activeGeo,
-        },
+          manual: true,
+        } as any,
       ]);
       setNoteText({ text: '', until: 0 });
       playChime(2);
@@ -482,7 +484,11 @@ export const InCarDisplay: React.FC = () => {
   };
 
   const ingestPhoneHazards = (detectedHazards: any[]) => {
-    if (!detectedHazards || detectedHazards.length === 0) return;
+    if (!detectedHazards || detectedHazards.length === 0) {
+      // Clear all incoming camera hazards when road is clear
+      setHazards((prev) => prev.filter((h) => (h as any).manual));
+      return;
+    }
 
     detectedHazards.forEach((dh) => {
       let key = 'pothole';
@@ -1207,36 +1213,6 @@ export const InCarDisplay: React.FC = () => {
                         />
                       ))}
                     </div>
-                  </div>
-                </div>
-              ) : activeScenario === 'vernacular' ? (
-                <div className="w-full bg-[#0a2618]/95 border border-[#22c55e] rounded-2xl p-3 sm:p-3.5 shadow-2xl backdrop-blur-xl flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-[#22c55e]/20 border border-[#22c55e] flex items-center justify-center text-[#22c55e] text-lg flex-shrink-0">
-                      🔊
-                    </div>
-                    <div>
-                      <div className="text-xs sm:text-sm font-extrabold text-white leading-tight">
-                        முன்னே ஒருவர் சாலையைக் கடக்கிறார். கவனம்.
-                      </div>
-                      <div className="text-[11px] text-emerald-300 font-mono mt-0.5">
-                        MargAI Vernacular Co-Pilot Active
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-0.5 h-6 px-1">
-                    {[12, 20, 16, 24, 18, 10, 22].map((h, i) => (
-                      <span
-                        key={i}
-                        className="w-1 bg-[#22c55e] rounded-full animate-pulse"
-                        style={{
-                          height: `${h}px`,
-                          animationDelay: `${i * 0.12}s`,
-                          animationDuration: '0.6s',
-                        }}
-                      />
-                    ))}
                   </div>
                 </div>
               ) : (

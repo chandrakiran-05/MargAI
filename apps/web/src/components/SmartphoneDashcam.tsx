@@ -72,7 +72,11 @@ export const SmartphoneDashcam: React.FC = () => {
   const dataConnRef = useRef<any>(null);
 
   // Live Telemetry from Smartphone Sensors
-  const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number }>({ lat: 12.9716, lng: 77.5946 });
+  const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number; accuracy: number }>({
+    lat: 12.9716,
+    lng: 77.5946,
+    accuracy: 10,
+  });
   const [speedKmh, setSpeedKmh] = useState<number>(65);
   const [zAccelG, setZAccelG] = useState<number>(1.02);
   const [fps, setFps] = useState<number>(24);
@@ -80,6 +84,10 @@ export const SmartphoneDashcam: React.FC = () => {
 
   // Hazards Display — now populated by real ML detections
   const [activeHazards, setActiveHazards] = useState<HazardBox[]>([]);
+  const [sightMode, setSightMode] = useState<'auto' | 'clear' | 'pedestrian' | 'pothole' | 'cattle' | 'water'>('clear');
+  const sightModeRef = useRef(sightMode);
+  sightModeRef.current = sightMode;
+
   const [roadCurve, setRoadCurve] = useState<string>('STRAIGHT');
   const [criticalAlert, setCriticalAlert] = useState<string | null>(null);
 
@@ -94,6 +102,72 @@ export const SmartphoneDashcam: React.FC = () => {
   const waveformHistoryRef = useRef<number[]>(Array(50).fill(0));
   const detectionLoopRef = useRef<number | null>(null);
   const lastAlertRef = useRef<string>('');
+
+  const telemetryRef = useRef({
+    speedKmh,
+    zAccelG,
+    roadCurve,
+    activeHazards,
+    fps,
+  });
+  useEffect(() => {
+    telemetryRef.current = { speedKmh, zAccelG, roadCurve, activeHazards, fps };
+  }, [speedKmh, zAccelG, roadCurve, activeHazards, fps]);
+
+  const applySightMode = (mode: 'auto' | 'clear' | 'pedestrian' | 'pothole' | 'cattle' | 'water') => {
+    setSightMode(mode);
+    if (mode === 'clear') {
+      setActiveHazards([]);
+    } else if (mode === 'pedestrian') {
+      setActiveHazards([
+        {
+          hazard_type: 'PEDESTRIAN',
+          bbox: [66, 26, 84, 82],
+          confidence: 0.88,
+          risk_level: 'CRITICAL',
+          distance_m: 60,
+          label: 'PEDESTRIAN',
+          geo: gpsCoords,
+        },
+      ]);
+    } else if (mode === 'pothole') {
+      setActiveHazards([
+        {
+          hazard_type: 'POTHOLE',
+          bbox: [22, 58, 48, 80],
+          confidence: 0.92,
+          risk_level: 'HIGH',
+          distance_m: 45,
+          label: 'POTHOLE',
+          geo: gpsCoords,
+        },
+      ]);
+    } else if (mode === 'cattle') {
+      setActiveHazards([
+        {
+          hazard_type: 'ANIMAL',
+          bbox: [35, 38, 65, 68],
+          confidence: 0.89,
+          risk_level: 'CRITICAL',
+          distance_m: 50,
+          label: 'CATTLE',
+          geo: gpsCoords,
+        },
+      ]);
+    } else if (mode === 'water') {
+      setActiveHazards([
+        {
+          hazard_type: 'WATERLOGGING',
+          bbox: [20, 62, 72, 88],
+          confidence: 0.91,
+          risk_level: 'HIGH',
+          distance_m: 40,
+          label: 'WATERLOGGING',
+          geo: gpsCoords,
+        },
+      ]);
+    }
+  };
 
   // Initialize BroadcastChannel & WebSocket
   useEffect(() => {
@@ -162,6 +236,7 @@ export const SmartphoneDashcam: React.FC = () => {
     setMlModelLoaded(true);
 
     const interval = setInterval(async () => {
+      if (sightModeRef.current !== 'auto') return;
       if (!videoRef.current || videoRef.current.readyState < 2) return;
 
       try {
@@ -174,7 +249,7 @@ export const SmartphoneDashcam: React.FC = () => {
 
         const pos = getCurrentPosition();
         if (pos) {
-          setGpsCoords({ lat: pos.lat, lng: pos.lng });
+          setGpsCoords({ lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy || 10 });
         }
 
         if (result.hazards.length > 0) {
@@ -188,6 +263,8 @@ export const SmartphoneDashcam: React.FC = () => {
             geo: h.geo,
           }));
           setActiveHazards(newHazards);
+        } else {
+          setActiveHazards([]);
         }
       } catch (err) {}
     }, 350);
@@ -428,7 +505,7 @@ export const SmartphoneDashcam: React.FC = () => {
     return () => cancelAnimationFrame(animId);
   }, [isBumpSpike]);
 
-  // Frame Capture for BroadcastChannel & WebSocket
+  // Frame Capture for BroadcastChannel & WebSocket (Smooth 200ms, Non-blocking Zero-Lag)
   useEffect(() => {
     const interval = setInterval(() => {
       if (!videoRef.current || !canvasRef.current) return;
@@ -436,21 +513,23 @@ export const SmartphoneDashcam: React.FC = () => {
       const c = canvasRef.current;
       if (v.readyState < 2) return;
 
-      c.width = 320;
-      c.height = 180;
+      c.width = 240;
+      c.height = 135;
       const ctx = c.getContext('2d');
       if (!ctx) return;
-      ctx.drawImage(v, 0, 0, 320, 180);
-      const b64 = c.toDataURL('image/jpeg', 0.55);
+      ctx.drawImage(v, 0, 0, 240, 135);
+      const b64 = c.toDataURL('image/jpeg', 0.45);
+
+      const tel = telemetryRef.current;
 
       // Send over BroadcastChannel to Infotainment
       bcRef.current?.postMessage({
         camera_b64: b64,
-        speed_kmh: speedKmh,
-        z_accel_g: zAccelG,
-        road_curve: roadCurve,
-        hazards: activeHazards,
-        fps,
+        speed_kmh: tel.speedKmh,
+        z_accel_g: tel.zAccelG,
+        road_curve: tel.roadCurve,
+        hazards: tel.activeHazards,
+        fps: tel.fps,
       });
 
       // Send over WebRTC DataConnection fallback if open
@@ -458,10 +537,10 @@ export const SmartphoneDashcam: React.FC = () => {
         try {
           dataConnRef.current.send({
             camera_b64: b64,
-            speed_kmh: speedKmh,
-            z_accel_g: zAccelG,
-            road_curve: roadCurve,
-            hazards: activeHazards,
+            speed_kmh: tel.speedKmh,
+            z_accel_g: tel.zAccelG,
+            road_curve: tel.roadCurve,
+            hazards: tel.activeHazards,
           });
         } catch (e) {}
       }
@@ -471,18 +550,18 @@ export const SmartphoneDashcam: React.FC = () => {
           JSON.stringify({
             frame_base64: b64,
             telemetry: {
-              speed_kmh: speedKmh,
-              z_accel_g: zAccelG,
-              road_geometry: { curve_type: roadCurve },
+              speed_kmh: tel.speedKmh,
+              z_accel_g: tel.zAccelG,
+              road_geometry: { curve_type: tel.roadCurve },
             },
-            latest_hazards: activeHazards,
+            latest_hazards: tel.activeHazards,
           })
         );
       }
-    }, 120);
+    }, 200);
 
     return () => clearInterval(interval);
-  }, [speedKmh, zAccelG, roadCurve, activeHazards, fps]);
+  }, []);
 
   // Bump Trigger
   const triggerBumpSim = (gVal: number = 2.4) => {
@@ -699,6 +778,61 @@ export const SmartphoneDashcam: React.FC = () => {
         {/* Side Clamp Pads */}
         <div className="absolute top-1/2 -left-2.5 -translate-y-1/2 w-3.5 h-20 bg-slate-700 rounded-r-md border border-slate-500 shadow-lg z-20"></div>
         <div className="absolute top-1/2 -right-2.5 -translate-y-1/2 w-3.5 h-20 bg-slate-700 rounded-l-md border border-slate-500 shadow-lg z-20"></div>
+      </div>
+
+      {/* QUICK SIGHT TRIGGER BAR (SLIDES 6 & 10) */}
+      <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5 bg-[#0a0f1d] border border-cyan-500/30 p-2 px-3 rounded-xl text-xs font-mono">
+        <span className="text-cyan-400 font-bold text-[11px] flex items-center gap-1">
+          <span>🧪 SIGHT:</span>
+        </span>
+        <button
+          onClick={() => applySightMode('clear')}
+          className={`px-2.5 py-1 rounded-lg font-bold text-xs transition-all ${
+            sightMode === 'clear' ? 'bg-emerald-600 text-white shadow-lg' : 'bg-slate-800 text-slate-300 hover:text-white'
+          }`}
+        >
+          🟢 Clear Road (Clean)
+        </button>
+        <button
+          onClick={() => applySightMode('pedestrian')}
+          className={`px-2.5 py-1 rounded-lg font-bold text-xs transition-all ${
+            sightMode === 'pedestrian' ? 'bg-red-600 text-white shadow-lg' : 'bg-slate-800 text-slate-300 hover:text-white'
+          }`}
+        >
+          🚶 Pedestrian (88%)
+        </button>
+        <button
+          onClick={() => applySightMode('pothole')}
+          className={`px-2.5 py-1 rounded-lg font-bold text-xs transition-all ${
+            sightMode === 'pothole' ? 'bg-amber-600 text-black shadow-lg' : 'bg-slate-800 text-slate-300 hover:text-white'
+          }`}
+        >
+          🕳️ Pothole (92%)
+        </button>
+        <button
+          onClick={() => applySightMode('cattle')}
+          className={`px-2.5 py-1 rounded-lg font-bold text-xs transition-all ${
+            sightMode === 'cattle' ? 'bg-orange-600 text-white shadow-lg' : 'bg-slate-800 text-slate-300 hover:text-white'
+          }`}
+        >
+          🐄 Cattle (89%)
+        </button>
+        <button
+          onClick={() => applySightMode('water')}
+          className={`px-2.5 py-1 rounded-lg font-bold text-xs transition-all ${
+            sightMode === 'water' ? 'bg-cyan-600 text-white shadow-lg' : 'bg-slate-800 text-slate-300 hover:text-white'
+          }`}
+        >
+          🌊 Water (91%)
+        </button>
+        <button
+          onClick={() => applySightMode('auto')}
+          className={`px-2.5 py-1 rounded-lg font-bold text-xs transition-all ${
+            sightMode === 'auto' ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-800 text-slate-300 hover:text-white'
+          }`}
+        >
+          🤖 Auto Edge CV
+        </button>
       </div>
 
       {/* CONTROLS & MANUAL COCKPIT PAIRING BAR */}
