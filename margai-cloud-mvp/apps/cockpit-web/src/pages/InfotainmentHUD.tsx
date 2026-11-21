@@ -7,6 +7,9 @@ import {
   Smartphone,
   Navigation,
   Eye,
+  Camera,
+  X,
+  ExternalLink,
   RotateCcw,
   ShieldAlert,
   AlertTriangle,
@@ -79,7 +82,7 @@ const HAZARD_TEMPLATES: Record<
       en: 'Stray cattle on road. Be alert.',
       hi: 'सड़क पर मवेशी हैं। सतर्क रहें।',
       ta: 'சாலையில் கால்நடைகள் உள்ளன. எச்சரிக்கை.',
-      te: 'రోడ్డుపై పశువులు ఉన్నాయి. அప్రமత్తంగా ఉండండి.',
+      te: 'రోడ్డుపై పశువులు ఉన్నాయి. అప్రమత్తంగా ఉండండి.',
       kn: 'ರಸ್ತೆಯಲ್ಲಿ ದನಗಳಿವೆ. ಜಾಗರೂಕರಾಗಿರಿ.',
     },
   },
@@ -107,13 +110,21 @@ export const InfotainmentHUD: React.FC = () => {
   const [currentLang, setCurrentLang] = useState<'en' | 'hi' | 'ta' | 'te' | 'kn'>('en');
   const [langMenuOpen, setLangMenuOpen] = useState<boolean>(false);
   const [muted, setMuted] = useState<boolean>(false);
-  const [viewMode, setViewMode] = useState<'road' | 'map'>('road');
+  const [viewMode, setViewMode] = useState<'road' | 'map' | 'camera'>('road');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Phone Cam PiP & Telemetry
-  const [phoneConnected, setPhoneConnected] = useState<boolean>(true);
+  const [phoneConnected, setPhoneConnected] = useState<boolean>(false);
   const [phoneFps, setPhoneFps] = useState<number>(24);
   const [phoneFrameB64, setPhoneFrameB64] = useState<string | null>(null);
+  const [showPairModal, setShowPairModal] = useState<boolean>(false);
+  const [isDirectCamActive, setIsDirectCamActive] = useState<boolean>(false);
+
+  const directVideoRef = useRef<HTMLVideoElement | null>(null);
+  const directStreamRef = useRef<MediaStream | null>(null);
+  const frameCountRef = useRef<number>(0);
+  const lastFpsCalcTimeRef = useRef<number>(performance.now());
+  const lastHeartbeatTimeRef = useRef<number>(0);
 
   // Active Hazard Queue
   const [hazards, setHazards] = useState<ActiveHazard[]>([
@@ -143,7 +154,7 @@ export const InfotainmentHUD: React.FC = () => {
         en: 'Stray cattle on road. Be alert.',
         hi: 'सड़क पर मवेशी हैं। सतर्क रहें।',
         ta: 'சாலையில் கால்நடைகள் உள்ளன. எச்சரிக்கை.',
-        te: 'రోడ్డుపై పశువులు ఉన్నాయి. அప్రமత్తంగా ఉండండి.',
+        te: 'రోడ్డుపై పశువులు ఉన్నాయి. అప్రమత్తంగా ఉండండి.',
         kn: 'ರಸ್ತೆಯಲ್ಲಿ ದನಗಳಿವೆ. ಜಾಗರೂಕರಾಗಿರಿ.',
       },
     },
@@ -183,7 +194,6 @@ export const InfotainmentHUD: React.FC = () => {
       wsRef.current = ws;
 
       ws.onopen = () => {
-        setPhoneConnected(true);
         ws.send(
           JSON.stringify({
             action: 'register',
@@ -197,9 +207,12 @@ export const InfotainmentHUD: React.FC = () => {
         try {
           const envelope = JSON.parse(event.data);
 
-          // A. Telemetry heartbeat
+          // A. Telemetry heartbeat (includes live phone camera frame)
           if (envelope.topic === 'telemetry.heartbeat') {
             const tel = envelope.payload;
+            lastHeartbeatTimeRef.current = Date.now();
+            setPhoneConnected(true);
+
             if (tel.speedKmh !== undefined && tel.speedKmh > 0) {
               setVehicleSpeed(Math.round(tel.speedKmh));
             }
@@ -217,6 +230,13 @@ export const InfotainmentHUD: React.FC = () => {
             }
             if (tel.frameB64) {
               setPhoneFrameB64(tel.frameB64);
+              frameCountRef.current++;
+              const now = performance.now();
+              if (now - lastFpsCalcTimeRef.current >= 1000) {
+                setPhoneFps(frameCountRef.current);
+                frameCountRef.current = 0;
+                lastFpsCalcTimeRef.current = now;
+              }
             }
           }
 
@@ -239,6 +259,16 @@ export const InfotainmentHUD: React.FC = () => {
       if (ws) ws.close();
     };
   }, [isBumpShockActive]);
+
+  // Check phone connection watchdog
+  useEffect(() => {
+    const watchdog = setInterval(() => {
+      if (lastHeartbeatTimeRef.current > 0 && Date.now() - lastHeartbeatTimeRef.current > 4000) {
+        setPhoneConnected(false);
+      }
+    }, 2000);
+    return () => clearInterval(watchdog);
+  }, []);
 
   // 4. Ingest Driver Alert
   const ingestDriverAlert = (alert: DriverAlert) => {
@@ -306,7 +336,41 @@ export const InfotainmentHUD: React.FC = () => {
     }
   };
 
-  // 6. Physical Pothole Shockwave Bounce
+  // 6. Direct Hardware Camera Toggle on this device
+  const toggleDirectCamera = async () => {
+    if (isDirectCamActive) {
+      if (directStreamRef.current) {
+        directStreamRef.current.getTracks().forEach((t) => t.stop());
+        directStreamRef.current = null;
+      }
+      setIsDirectCamActive(false);
+      showToast('Device camera stopped');
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 640 },
+          height: { ideal: 360 },
+        },
+        audio: false,
+      });
+      directStreamRef.current = stream;
+      if (directVideoRef.current) {
+        directVideoRef.current.srcObject = stream;
+        directVideoRef.current.play().catch(() => {});
+      }
+      setIsDirectCamActive(true);
+      setViewMode('camera');
+      showToast('📷 Direct smartphone/device camera activated!');
+    } catch (err) {
+      showToast('⚠️ Could not open device camera. Make sure camera permissions are allowed.');
+    }
+  };
+
+  // 7. Physical Pothole Shockwave Bounce
   const triggerBumpEvent = (gVal: number) => {
     setIsBumpShockActive(true);
     showToast(`Bump felt (${gVal.toFixed(2)}G): Pothole logged on road`);
@@ -317,7 +381,7 @@ export const InfotainmentHUD: React.FC = () => {
     }, 1000);
   };
 
-  // 7. Distance Countdown Animation Loop
+  // 8. Distance Countdown Animation Loop
   useEffect(() => {
     let animId: number;
 
@@ -406,17 +470,27 @@ export const InfotainmentHUD: React.FC = () => {
 
         {/* Controls: Phone Cam, Language, Audio */}
         <div className="flex items-center gap-3">
-          {/* Phone Link Indicator */}
-          <div
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${
-              phoneConnected
+          {/* Smartphone Cam Link Button */}
+          <button
+            onClick={() => setShowPairModal(true)}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-all ${
+              isDirectCamActive
+                ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400'
+                : phoneConnected
                 ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
-                : 'bg-amber-500/15 border-amber-500/40 text-amber-400 animate-pulse'
+                : 'bg-amber-500/15 border-amber-500/40 text-amber-400 hover:bg-amber-500/25 animate-pulse'
             }`}
+            title="Click to pair smartphone or view camera link"
           >
             <Smartphone className="w-3.5 h-3.5" />
-            <span>{phoneConnected ? `Phone Live (${phoneFps} FPS)` : 'Connecting Phone'}</span>
-          </div>
+            <span>
+              {isDirectCamActive
+                ? 'Direct Device Cam'
+                : phoneConnected
+                ? `Phone Cam (${phoneFps} FPS)`
+                : 'Connect Phone Cam'}
+            </span>
+          </button>
 
           {/* Regional Indian Language Selector */}
           <div className="relative">
@@ -532,7 +606,11 @@ export const InfotainmentHUD: React.FC = () => {
                   .map((h) => {
                     const isUrgent = h.riskLevel === 'urgent';
                     const isCaution = h.riskLevel === 'caution';
-                    const badgeBg = isUrgent ? 'bg-rose-500/20 text-rose-400 border-rose-500/40' : isCaution ? 'bg-amber-500/20 text-amber-400 border-amber-500/40' : 'bg-blue-500/20 text-blue-400 border-blue-500/40';
+                    const badgeBg = isUrgent
+                      ? 'bg-rose-500/20 text-rose-400 border-rose-500/40'
+                      : isCaution
+                      ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                      : 'bg-blue-500/20 text-blue-400 border-blue-500/40';
 
                     return (
                       <div
@@ -543,9 +621,11 @@ export const InfotainmentHUD: React.FC = () => {
                           <span className="text-xl flex-shrink-0">{getHazardIcon(h.type)}</span>
                           <div className="min-w-0">
                             <p className="text-xs font-bold text-white capitalize truncate">
-                              {h.type}
+                              {h.type.replace('_', ' ')}
                             </p>
-                            <span className={`inline-block text-[9px] font-bold px-1.5 py-0.2 rounded border ${badgeBg} uppercase mt-0.5`}>
+                            <span
+                              className={`inline-block text-[9px] font-bold px-1.5 py-0.2 rounded border ${badgeBg} uppercase mt-0.5`}
+                            >
                               {h.riskLevel}
                             </span>
                           </div>
@@ -572,36 +652,180 @@ export const InfotainmentHUD: React.FC = () => {
           <div className="bg-[#14161a] border border-white/10 rounded-2xl p-2.5 shadow-xl flex flex-col gap-1.5">
             <div className="flex items-center justify-between text-xs text-slate-400 px-1">
               <span className="flex items-center gap-1 font-semibold text-white">
-                <Smartphone className="w-3 h-3 text-[#4285F4]" />
+                <Camera className="w-3.5 h-3.5 text-[#4285F4]" />
                 Dashcam Feed
               </span>
-              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                LIVE
-              </span>
+              <button
+                onClick={() => setShowPairModal(true)}
+                className="text-[10px] font-mono text-[#4285F4] hover:underline flex items-center gap-1"
+              >
+                <span>Pair Phone</span>
+              </button>
             </div>
 
-            <div className="w-full aspect-video bg-black/60 rounded-xl overflow-hidden border border-white/10 relative">
-              {phoneFrameB64 ? (
+            {/* Clickable PiP Box - Toggles Camera View */}
+            <div
+              onClick={() => setViewMode(viewMode === 'camera' ? 'road' : 'camera')}
+              className="w-full aspect-video bg-black/70 rounded-xl overflow-hidden border border-white/10 relative cursor-pointer group"
+              title="Click to toggle full Camera View"
+            >
+              {isDirectCamActive ? (
+                <video
+                  ref={directVideoRef}
+                  playsInline
+                  autoPlay
+                  muted
+                  className="w-full h-full object-cover"
+                />
+              ) : phoneFrameB64 ? (
                 <img
                   src={phoneFrameB64}
-                  alt="Phone Camera"
+                  alt="Phone Camera Live"
                   className="w-full h-full object-cover"
                 />
               ) : (
                 <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 text-xs">
                   <Smartphone className="w-6 h-6 text-[#4285F4] animate-pulse mb-1" />
-                  <span>Phone feed standby</span>
+                  <span>Tap to pair phone cam</span>
                 </div>
               )}
+
+              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-xs font-bold text-white transition-opacity">
+                <span>{viewMode === 'camera' ? 'Minimize' : 'Expand View ⤢'}</span>
+              </div>
+
+              <span className="absolute top-1 left-1 bg-black/80 px-1.5 py-0.5 rounded text-[9px] font-mono text-emerald-400 border border-white/10">
+                {isDirectCamActive ? 'DIRECT CAM' : phoneConnected ? 'LIVE FEED' : 'STANDBY'}
+              </span>
+            </div>
+
+            {/* Quick Actions for Camera */}
+            <div className="flex gap-1.5 pt-0.5">
+              <button
+                onClick={toggleDirectCamera}
+                className={`flex-1 py-1 rounded-lg text-[11px] font-bold border transition-colors flex items-center justify-center gap-1 ${
+                  isDirectCamActive
+                    ? 'bg-rose-500/20 border-rose-500/40 text-rose-300'
+                    : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-300'
+                }`}
+              >
+                <Camera className="w-3 h-3" />
+                <span>{isDirectCamActive ? 'Stop Cam' : 'Device Cam'}</span>
+              </button>
+
+              <button
+                onClick={() => setShowPairModal(true)}
+                className="flex-1 py-1 rounded-lg text-[11px] font-bold bg-[#4285F4]/15 hover:bg-[#4285F4]/25 border border-[#4285F4]/30 text-[#4285F4] transition-colors flex items-center justify-center gap-1"
+              >
+                <Smartphone className="w-3 h-3" />
+                <span>Pair Phone</span>
+              </button>
             </div>
           </div>
         </aside>
 
         {/* =======================================================================
-            CENTER / RIGHT MAIN VIEWPORT (Road View or Map View)
+            CENTER / RIGHT MAIN VIEWPORT (Road View, Map View, or Direct Camera View)
         ======================================================================= */}
         <main className="flex-1 relative bg-[#121316] border border-white/10 rounded-2xl overflow-hidden shadow-2xl flex flex-col justify-between">
-          {/* VIEWPORT CONTENT: ROAD VIEW */}
+          {/* ===================================================================
+              VIEWPORT 1: DIRECT SMARTPHONE CAMERA FEED VIEW
+          =================================================================== */}
+          {viewMode === 'camera' && (
+            <div className="absolute inset-0 bg-black flex items-center justify-center overflow-hidden">
+              {isDirectCamActive ? (
+                <video
+                  ref={directVideoRef}
+                  playsInline
+                  autoPlay
+                  muted
+                  className="w-full h-full object-cover"
+                />
+              ) : phoneFrameB64 ? (
+                <img
+                  src={phoneFrameB64}
+                  alt="Live Smartphone Dashcam"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center text-center p-6 text-slate-400">
+                  <div className="w-16 h-16 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-[#4285F4] mb-3 animate-pulse">
+                    <Camera className="w-8 h-8" />
+                  </div>
+                  <h4 className="text-base font-bold text-white mb-1">
+                    Waiting for Smartphone Camera Feed
+                  </h4>
+                  <p className="text-xs text-slate-400 max-w-sm mb-4">
+                    Pair your smartphone as an AI dashcam, or turn on the camera on this device.
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setShowPairModal(true)}
+                      className="px-4 py-2 rounded-xl bg-[#4285F4] hover:bg-[#3367D6] text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-[#4285F4]/20 transition-all"
+                    >
+                      <Smartphone className="w-4 h-4" />
+                      <span>Pair Phone via QR</span>
+                    </button>
+                    <button
+                      onClick={toggleDirectCamera}
+                      className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center gap-2 border border-white/10 transition-all"
+                    >
+                      <Camera className="w-4 h-4" />
+                      <span>Enable Device Camera</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Real-time ADAS AR Overlay on Camera Feed */}
+              <div className="absolute inset-0 pointer-events-none">
+                {/* Horizon Line & Center Crosshair */}
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-32 border border-white/15 rounded-2xl flex items-center justify-center">
+                  <div className="w-2 h-2 rounded-full bg-[#4285F4]/60" />
+                </div>
+
+                {/* Approaching Hazard AR Highlight Box */}
+                {topHazard && (
+                  <div
+                    className="absolute top-1/3 left-1/2 -translate-x-1/2 w-64 h-32 border-2 border-dashed rounded-2xl animate-pulse flex flex-col items-center justify-between p-2.5 shadow-2xl"
+                    style={{
+                      borderColor: topHazard.riskLevel === 'urgent' ? '#EA4335' : '#FBBC05',
+                      backgroundColor:
+                        topHazard.riskLevel === 'urgent'
+                          ? 'rgba(234, 67, 53, 0.15)'
+                          : 'rgba(251, 188, 5, 0.15)',
+                    }}
+                  >
+                    <span className="text-2xl">{getHazardIcon(topHazard.type)}</span>
+                    <span className="text-xs font-mono font-bold text-white bg-black/75 px-2.5 py-0.5 rounded border border-white/15">
+                      {topHazard.type.toUpperCase().replace('_', ' ')} · {Math.round(topHazard.distanceM)}m
+                    </span>
+                  </div>
+                )}
+
+                {/* Camera HUD Telemetry Badges */}
+                <div className="absolute bottom-4 left-4 flex items-center gap-2 pointer-events-auto">
+                  <span className="bg-black/75 border border-white/15 px-3 py-1.5 rounded-xl text-xs font-mono text-emerald-400 flex items-center gap-1.5 backdrop-blur-md">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>
+                      {isDirectCamActive
+                        ? 'HARDWARE CAM 60 FPS'
+                        : phoneConnected
+                        ? `SMARTPHONE LINK ${phoneFps} FPS`
+                        : 'STANDBY'}
+                    </span>
+                  </span>
+                  <span className="bg-black/75 border border-white/15 px-3 py-1.5 rounded-xl text-xs font-mono text-slate-300 backdrop-blur-md">
+                    LATENCY &lt;15ms
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ===================================================================
+              VIEWPORT 2: ROAD VISION VIEW (3D PERSPECTIVE)
+          =================================================================== */}
           {viewMode === 'road' && (
             <div className="absolute inset-0">
               <svg
@@ -751,7 +975,9 @@ export const InfotainmentHUD: React.FC = () => {
             </div>
           )}
 
-          {/* VIEWPORT CONTENT: NAVIGATION MAP VIEW */}
+          {/* ===================================================================
+              VIEWPORT 3: VECTOR NAVIGATION MAP VIEW
+          =================================================================== */}
           {viewMode === 'map' && (
             <div className="absolute inset-0">
               <svg className="w-full h-full" viewBox="0 0 800 480" preserveAspectRatio="none">
@@ -905,7 +1131,11 @@ export const InfotainmentHUD: React.FC = () => {
           {/* Bottom view label */}
           <div className="z-10 p-3 flex items-center justify-between text-xs text-slate-400">
             <span className="bg-black/60 px-2.5 py-1 rounded-lg backdrop-blur-md border border-white/10">
-              {viewMode === 'road' ? '🛣️ 3D Perspective Road Vision' : '🗺️ Vector Navigation Map'}
+              {viewMode === 'camera'
+                ? '📷 Live Smartphone Camera Feed (ADAS Vision)'
+                : viewMode === 'road'
+                ? '🛣️ 3D Perspective Road Vision'
+                : '🗺️ Vector Navigation Map'}
             </span>
           </div>
         </main>
@@ -915,8 +1145,8 @@ export const InfotainmentHUD: React.FC = () => {
           3. CLEAN AUTOMOTIVE TOUCH DOCK (BOTTOM CONTROLS)
       ========================================================================= */}
       <footer className="h-16 px-4 bg-[#121316] border-t border-white/10 flex items-center justify-between gap-2 z-30">
-        {/* Left: View Mode Toggle */}
-        <div className="flex items-center gap-1.5 bg-white/5 p-1 rounded-xl border border-white/10">
+        {/* Left: 3-Way View Mode Switcher */}
+        <div className="flex items-center gap-1 bg-white/5 p-1 rounded-xl border border-white/10">
           <button
             onClick={() => setViewMode('road')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
@@ -926,7 +1156,7 @@ export const InfotainmentHUD: React.FC = () => {
             }`}
           >
             <span>🛣️</span>
-            <span>Road View</span>
+            <span>Road</span>
           </button>
 
           <button
@@ -938,7 +1168,19 @@ export const InfotainmentHUD: React.FC = () => {
             }`}
           >
             <span>🗺️</span>
-            <span>Map View</span>
+            <span>Map</span>
+          </button>
+
+          <button
+            onClick={() => setViewMode('camera')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              viewMode === 'camera'
+                ? 'bg-[#4285F4] text-white shadow-md'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <span>📷</span>
+            <span>Camera Feed</span>
           </button>
         </div>
 
@@ -963,7 +1205,7 @@ export const InfotainmentHUD: React.FC = () => {
           })}
         </div>
 
-        {/* Right: Bump simulation & Clear */}
+        {/* Right: Bump simulation, Pair Phone & Clear */}
         <div className="flex items-center gap-2">
           <button
             onClick={() => triggerBumpEvent(2.4)}
@@ -971,6 +1213,14 @@ export const InfotainmentHUD: React.FC = () => {
             title="Simulate accelerometer shockwave"
           >
             <span>⚡ Bump (2.4G)</span>
+          </button>
+
+          <button
+            onClick={() => setShowPairModal(true)}
+            className="px-3 py-1.5 rounded-xl bg-[#4285F4]/20 hover:bg-[#4285F4]/30 border border-[#4285F4]/40 text-[#4285F4] text-xs font-bold transition-colors flex items-center gap-1.5"
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            <span>Pair Phone</span>
           </button>
 
           {hazards.length > 0 && (
@@ -984,6 +1234,79 @@ export const InfotainmentHUD: React.FC = () => {
           )}
         </div>
       </footer>
+
+      {/* =========================================================================
+          4. SMARTPHONE PAIRING MODAL (QR CODE & ONE-CLICK TEST)
+      ========================================================================= */}
+      {showPairModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-[#15171b] border border-white/15 rounded-3xl max-w-md w-full p-6 relative font-sans text-slate-100 shadow-2xl">
+            <button
+              onClick={() => setShowPairModal(false)}
+              className="absolute top-5 right-5 p-1.5 rounded-xl bg-white/10 text-slate-400 hover:text-white border border-white/10 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-2xl bg-[#4285F4]/20 border border-[#4285F4]/40 flex items-center justify-center text-[#4285F4]">
+                <Smartphone className="w-5 h-5 animate-pulse" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-base text-white">Drive with Your Smartphone</h3>
+                <p className="text-xs text-slate-400">Stream camera & motion sensors straight to this display</p>
+              </div>
+            </div>
+
+            <div className="bg-[#0f1013] p-5 rounded-2xl border border-white/10 flex flex-col items-center text-center space-y-3 mb-4">
+              <p className="text-xs text-slate-300">
+                Scan this QR code with your phone camera to mount your phone as a dashcam:
+              </p>
+              <div className="p-3 bg-white rounded-2xl shadow-xl">
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(
+                    typeof window !== 'undefined'
+                      ? `${window.location.origin}/phone`
+                      : 'https://margai-cockpit-web-uhaqjpi3va-el.a.run.app/phone'
+                  )}`}
+                  alt="Smartphone Dashcam QR"
+                  className="w-44 h-44"
+                />
+              </div>
+              <a
+                href="/phone"
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-[#4285F4] font-mono break-all font-bold hover:underline flex items-center gap-1"
+              >
+                <span>{typeof window !== 'undefined' ? `${window.location.origin}/phone` : '/phone'}</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+              <p className="text-[11px] text-slate-400 max-w-xs">
+                Once opened on your phone, its rear camera will start streaming real-time road video and shockwave telemetry over WebSocket with &lt;15ms latency.
+              </p>
+            </div>
+
+            <div className="flex gap-2">
+              <a
+                href="/phone"
+                target="_blank"
+                rel="noreferrer"
+                className="flex-1 py-2.5 px-3 rounded-xl bg-[#4285F4] hover:bg-[#3367D6] text-white font-bold text-xs text-center flex items-center justify-center gap-1.5 transition-all shadow-md"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Open in New Tab</span>
+              </a>
+              <button
+                onClick={() => setShowPairModal(false)}
+                className="py-2.5 px-5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-colors"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

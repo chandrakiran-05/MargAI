@@ -192,6 +192,7 @@ export const PhoneNode: React.FC = () => {
       canvas.width = 320;
       canvas.height = 180;
       ctx.drawImage(video, 0, 0, 320, 180);
+      const frameB64 = canvas.toDataURL('image/jpeg', 0.5);
 
       isProcessingRef.current = true;
       const t0 = performance.now();
@@ -244,6 +245,7 @@ export const PhoneNode: React.FC = () => {
               roadCurve,
               latitude: gpsCoords?.lat || 12.9716,
               longitude: gpsCoords?.lng || 77.5946,
+              frameB64,
             },
           })
         );
